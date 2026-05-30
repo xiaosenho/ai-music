@@ -1,0 +1,13 @@
+.idea/
+.vscode/
+.DS_Store
+
+*.log
+*.tmp
+
+.env
+.env.docker
+
+apps/api/target/
+apps/web/node_modules/
+apps/web/dist/

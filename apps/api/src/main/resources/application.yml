@@ -1,0 +1,74 @@
+server:
+  port: ${SERVER_PORT:8092}
+
+spring:
+  application:
+    name: ai-music-control-plane
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/aimusic}
+    username: ${SPRING_DATASOURCE_USERNAME:pgvector}
+    password: ${SPRING_DATASOURCE_PASSWORD:change-me}
+    hikari:
+      maximum-pool-size: ${SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE:16}
+      minimum-idle: ${SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE:4}
+      idle-timeout: ${SPRING_DATASOURCE_HIKARI_IDLE_TIMEOUT:300000}
+      connection-timeout: ${SPRING_DATASOURCE_HIKARI_CONNECTION_TIMEOUT:10000}
+      max-lifetime: ${SPRING_DATASOURCE_HIKARI_MAX_LIFETIME:1800000}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+        format_sql: false
+  flyway:
+    enabled: ${AIMUSIC_DB_MIGRATION_ENABLED:true}
+    locations: classpath:db/migration
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+      password: ${SPRING_DATA_REDIS_PASSWORD:}
+      timeout: 3s
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+aimusic:
+  cors:
+    allowed-origins: ${AIMUSIC_CORS_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173}
+  jwt:
+    secret: ${JWT_SECRET:change-me}
+    access-ttl-ms: ${JWT_ACCESS_TTL_MS:86400000}
+    refresh-ttl-ms: ${JWT_REFRESH_TTL_MS:604800000}
+  db:
+    migration-enabled: ${AIMUSIC_DB_MIGRATION_ENABLED:true}
+  cos:
+    region: ${COS_REGION:ap-guangzhou}
+    bucket: ${COS_BUCKET:change-me}
+    secret-id: ${COS_SECRET_ID:change-me}
+    secret-key: ${COS_SECRET_KEY:change-me}
+    public-base-url: ${COS_PUBLIC_BASE_URL:https://example.com}
+    upload-token-ttl-seconds: ${COS_UPLOAD_TOKEN_TTL_SECONDS:300}
+  media:
+    max-image-bytes: ${MEDIA_MAX_IMAGE_BYTES:10485760}
+  ai:
+    mock-enabled: ${AIMUSIC_AI_MOCK_ENABLED:false}
+    max-tool-rounds: ${AIMUSIC_AI_MAX_TOOL_ROUNDS:3}
+    base-url: ${AI_BASE_URL:https://ark.cn-beijing.volces.com/api/v3}
+    chat-completions-path: ${AI_CHAT_COMPLETIONS_PATH:/chat/completions}
+    api-key: ${AI_API_KEY:change-me}
+    chat-model: ${AI_CHAT_MODEL:doubao-seed-2-0-mini-260428}
+  worker:
+    heartbeat-interval-seconds: ${AIMUSIC_WORKER_HEARTBEAT_INTERVAL_SECONDS:30}
+    pull-interval-seconds: ${AIMUSIC_WORKER_PULL_INTERVAL_SECONDS:10}
+    job-lease-seconds: ${AIMUSIC_WORKER_JOB_LEASE_SECONDS:300}

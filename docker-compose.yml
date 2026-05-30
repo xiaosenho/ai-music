@@ -1,0 +1,91 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: ai-music-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7
+    container_name: ai-music-redis
+    command: >
+      sh -c 'if [ -n "$$SPRING_DATA_REDIS_PASSWORD" ];
+      then redis-server --requirepass "$$SPRING_DATA_REDIS_PASSWORD";
+      else redis-server;
+      fi'
+    environment:
+      SPRING_DATA_REDIS_PASSWORD: ${SPRING_DATA_REDIS_PASSWORD}
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: ai-music-api
+    env_file:
+      - .env.docker
+    environment:
+      SERVER_PORT: ${SERVER_PORT}
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE}
+      SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL}
+      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME}
+      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD}
+      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: ${SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE}
+      SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE: ${SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE}
+      SPRING_DATASOURCE_HIKARI_IDLE_TIMEOUT: ${SPRING_DATASOURCE_HIKARI_IDLE_TIMEOUT}
+      SPRING_DATASOURCE_HIKARI_CONNECTION_TIMEOUT: ${SPRING_DATASOURCE_HIKARI_CONNECTION_TIMEOUT}
+      SPRING_DATASOURCE_HIKARI_MAX_LIFETIME: ${SPRING_DATASOURCE_HIKARI_MAX_LIFETIME}
+      SPRING_DATA_REDIS_HOST: ${SPRING_DATA_REDIS_HOST}
+      SPRING_DATA_REDIS_PORT: ${SPRING_DATA_REDIS_PORT}
+      SPRING_DATA_REDIS_PASSWORD: ${SPRING_DATA_REDIS_PASSWORD}
+      AIMUSIC_DB_MIGRATION_ENABLED: ${AIMUSIC_DB_MIGRATION_ENABLED}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ACCESS_TTL_MS: ${JWT_ACCESS_TTL_MS}
+      JWT_REFRESH_TTL_MS: ${JWT_REFRESH_TTL_MS}
+      COS_REGION: ${COS_REGION}
+      COS_BUCKET: ${COS_BUCKET}
+      COS_SECRET_ID: ${COS_SECRET_ID}
+      COS_SECRET_KEY: ${COS_SECRET_KEY}
+      COS_PUBLIC_BASE_URL: ${COS_PUBLIC_BASE_URL}
+      COS_UPLOAD_TOKEN_TTL_SECONDS: ${COS_UPLOAD_TOKEN_TTL_SECONDS}
+      MEDIA_MAX_IMAGE_BYTES: ${MEDIA_MAX_IMAGE_BYTES}
+      AIMUSIC_AI_MOCK_ENABLED: ${AIMUSIC_AI_MOCK_ENABLED}
+      AIMUSIC_AI_MAX_TOOL_ROUNDS: ${AIMUSIC_AI_MAX_TOOL_ROUNDS}
+      AI_BASE_URL: ${AI_BASE_URL}
+      AI_CHAT_COMPLETIONS_PATH: ${AI_CHAT_COMPLETIONS_PATH}
+      AI_API_KEY: ${AI_API_KEY}
+      AI_CHAT_MODEL: ${AI_CHAT_MODEL}
+      AIMUSIC_WORKER_HEARTBEAT_INTERVAL_SECONDS: ${AIMUSIC_WORKER_HEARTBEAT_INTERVAL_SECONDS}
+      AIMUSIC_WORKER_PULL_INTERVAL_SECONDS: ${AIMUSIC_WORKER_PULL_INTERVAL_SECONDS}
+      AIMUSIC_WORKER_JOB_LEASE_SECONDS: ${AIMUSIC_WORKER_JOB_LEASE_SECONDS}
+    ports:
+      - "${SERVER_PORT}:${SERVER_PORT}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
+
