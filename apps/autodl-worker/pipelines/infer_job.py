@@ -195,7 +195,7 @@ def execute_webui_auto_infer(
     expected_output_path: Path,
     parameters: Dict[str, object],
 ) -> None:
-    rvc_root = Path(config.rvc_root_dir).resolve()
+    rvc_root = resolve_rvc_root(Path(config.rvc_root_dir))
     layout = detect_webui_layout(rvc_root)
     env = build_rvc_env(rvc_root, layout)
     if layout == "nested":
@@ -456,6 +456,51 @@ def detect_webui_layout(rvc_root: Path) -> str:
     raise RuntimeError(f"Unsupported RVC WebUI layout under {rvc_root}")
 
 
+def resolve_rvc_root(configured_root: Path) -> Path:
+    candidates = [configured_root]
+    home_dir = Path.home()
+    common_names = [
+        "Retrieval-based-Voice-Conversion-WebUI",
+        "RVC-WebUI",
+    ]
+    for name in common_names:
+        candidates.extend([
+            Path("/") / name,
+            Path("/root") / name,
+            home_dir / name,
+        ])
+
+    seen = set()
+    for candidate in candidates:
+        resolved = candidate.expanduser().resolve()
+        key = str(resolved)
+        if key in seen:
+            continue
+        seen.add(key)
+        if looks_like_rvc_root(resolved):
+            return resolved
+
+    searched = ", ".join(sorted(seen))
+    raise RuntimeError(
+        "RVC root directory does not exist or is not a valid RVC repo. "
+        f"Configured value: {configured_root}. Checked: {searched}. "
+        "Set AIMUSIC_RVC_ROOT_DIR to the directory that contains infer-web.py "
+        "or tools/infer_cli.py."
+    )
+
+
+def looks_like_rvc_root(path: Path) -> bool:
+    if not path.exists() or not path.is_dir():
+        return False
+    markers = [
+        path / "infer-web.py",
+        path / "trainset_preprocess_pipeline_print.py",
+        path / "tools" / "infer_cli.py",
+        path / "infer" / "modules" / "train",
+    ]
+    return any(marker.exists() for marker in markers)
+
+
 def build_rvc_env(rvc_root: Path, layout: str) -> Dict[str, str]:
     env = os.environ.copy()
     if layout == "flat":
@@ -565,6 +610,11 @@ def main() -> int:
     protect = float(sys.argv[13])
     device = sys.argv[14]
     is_half = sys.argv[15] == "1"
+
+    # Some RVC WebUI builds parse sys.argv during module import (for example in Config()).
+    # Clear our positional arguments before importing repo modules so they don't treat
+    # worker runtime values as infer-web startup flags.
+    sys.argv = [sys.argv[0]]
 
     os.chdir(rvc_root)
     sys.path.append(str(rvc_root))
