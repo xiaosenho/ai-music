@@ -403,6 +403,35 @@ class AutoDlWorker:
         finalized = dict(manifest or {})
         job_type = str(job.get("jobType", "")).upper()
 
+        if job_type == "PROCESS":
+            local_processed_files = finalized.pop("localProcessedFiles", None)
+            if isinstance(local_processed_files, list):
+                processed_assets = []
+                for entry in local_processed_files:
+                    if not isinstance(entry, dict):
+                        continue
+                    local_path = entry.get("localPath")
+                    if not isinstance(local_path, str) or not local_path.strip():
+                        continue
+
+                    file_path = Path(local_path)
+                    ticket = self.prepare_storage_upload(str(entry.get("fileName") or file_path.name), "processed")
+                    self.upload_file_to_cos(file_path, ticket)
+                    processed_assets.append({
+                        "name": str(entry.get("fileName") or file_path.name),
+                        "assetType": str(entry.get("assetType") or "AUDIO"),
+                        "objectKey": ticket["objectKey"],
+                        "sourceUri": ticket["publicUrl"],
+                        "durationSeconds": entry.get("durationSeconds"),
+                        "language": entry.get("language"),
+                        "note": entry.get("note"),
+                        "metadata": entry.get("metadata") if isinstance(entry.get("metadata"), dict) else {},
+                    })
+
+                if processed_assets:
+                    finalized["processedAssets"] = processed_assets
+                    finalized["segmentCount"] = finalized.get("segmentCount") or len(processed_assets)
+
         if job_type == "TRAIN":
             local_model_path = pop_string(finalized, "localModelPath")
             if local_model_path:
@@ -485,6 +514,7 @@ class AutoDlWorker:
             "run_dir": str(run_dir),
             "context_path": str(run_dir / "context.json"),
             "payload_path": str(run_dir / "payload.json"),
+            "resources_path": str(run_dir / "resources.json"),
             "input_asset_ids": ",".join(job.get("inputAssetIds") or []),
             "dataset_version": job.get("datasetVersion") or "",
             "model_version": job.get("modelVersion") or "",

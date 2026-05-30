@@ -61,6 +61,7 @@ Available placeholders:
 - `{run_dir}`
 - `{context_path}`
 - `{payload_path}`
+- `{resources_path}`
 - `{input_asset_ids}`
 - `{dataset_version}`
 - `{model_version}`
@@ -97,9 +98,28 @@ Examples:
 
 ```json
 {
+  "localProcessedFiles": [
+    {
+      "localPath": "/root/autodl-tmp/job-123/segment-001.wav",
+      "fileName": "segment-001.wav",
+      "assetType": "AUDIO",
+      "language": "zh-CN",
+      "note": "processed segment",
+      "metadata": {
+        "sourceAssetId": "..."
+      }
+    }
+  ],
   "segmentCount": 328
 }
 ```
+
+Worker behavior:
+
+- uploads every `localProcessedFiles[*].localPath` to COS
+- rewrites the manifest into `processedAssets`
+- backend creates processed asset records from `processedAssets`
+- backend updates dataset `assetIds` to processed asset ids
 
 ### TRAIN
 

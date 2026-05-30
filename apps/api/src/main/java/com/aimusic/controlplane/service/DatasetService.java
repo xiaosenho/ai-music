@@ -74,6 +74,18 @@ public class DatasetService {
     }
 
     @Transactional
+    public void markReady(UUID id, List<String> assetIds, Integer segmentCount) {
+        Dataset dataset = require(id);
+        dataset.setStatus(DatasetStatus.READY);
+        if (assetIds != null && !assetIds.isEmpty()) {
+            dataset.setAssetIds(assetIds);
+        }
+        if (segmentCount != null) {
+            dataset.setSegmentCount(segmentCount);
+        }
+    }
+
+    @Transactional
     public void markProcessing(UUID id) {
         Dataset dataset = require(id);
         dataset.setStatus(DatasetStatus.PROCESSING);

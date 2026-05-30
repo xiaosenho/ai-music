@@ -107,6 +107,28 @@ public class AssetService {
     }
 
     @Transactional
+    public List<MediaAssetResponse> createProcessedAssets(List<ProcessedAssetCreateCommand> commands) {
+        List<MediaAsset> assets = commands.stream().map(command -> {
+            MediaAsset asset = new MediaAsset();
+            asset.setId(UUID.randomUUID());
+            asset.setName(command.name());
+            asset.setAssetType(command.assetType());
+            asset.setStatus(AssetStatus.APPROVED);
+            asset.setObjectKey(command.objectKey());
+            asset.setSourceUri(command.sourceUri() == null || command.sourceUri().isBlank()
+                    ? cosStorageService.publicUrlFor(command.objectKey())
+                    : command.sourceUri());
+            asset.setDurationSeconds(command.durationSeconds());
+            asset.setLanguage(command.language());
+            asset.setNote(command.note());
+            asset.setMetadata(serialize(command.metadata()));
+            return asset;
+        }).toList();
+
+        return mediaAssetRepository.saveAll(assets).stream().map(this::toResponse).toList();
+    }
+
+    @Transactional
     public MediaAssetResponse createOutputAsset(String name, String objectKey, String publicUrl, String note) {
         return createUploadedAsset(name, AssetType.AUDIO, objectKey, publicUrl, "zh-CN", note);
     }

@@ -10,20 +10,19 @@ COPY pom.xml ./
 
 RUN --mount=type=cache,target=/root/.m2 \
     if [ -n "$MAVEN_MIRROR_URL" ]; then \
-      cat <<EOF >/tmp/settings.xml
-<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
-          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 https://maven.apache.org/xsd/settings-1.0.0.xsd">
-  <mirrors>
-    <mirror>
-      <id>custom-mirror</id>
-      <name>custom-mirror</name>
-      <url>${MAVEN_MIRROR_URL}</url>
-      <mirrorOf>*</mirrorOf>
-    </mirror>
-  </mirrors>
-</settings>
-EOF
+      printf '%s\n' \
+        '<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"' \
+        '          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"' \
+        '          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 https://maven.apache.org/xsd/settings-1.0.0.xsd">' \
+        '  <mirrors>' \
+        '    <mirror>' \
+        '      <id>custom-mirror</id>' \
+        '      <name>custom-mirror</name>' \
+        "      <url>${MAVEN_MIRROR_URL}</url>" \
+        '      <mirrorOf>*</mirrorOf>' \
+        '    </mirror>' \
+        '  </mirrors>' \
+        '</settings>' >/tmp/settings.xml; \
       mvn -B -q -s /tmp/settings.xml dependency:go-offline; \
     else \
       mvn -B -q dependency:go-offline; \
