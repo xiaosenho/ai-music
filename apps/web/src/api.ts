@@ -1,14 +1,31 @@
-import type { CreateJobPayload, DashboardSummary, Job, JobEvent, WorkerNode } from "./types";
+import type {
+  CreateDatasetPayload,
+  CreateInferJobPayload,
+  CreateJobPayload,
+  CreateMediaAssetPayload,
+  CreateModelVersionPayload,
+  CreateProcessJobPayload,
+  CreateTrainJobPayload,
+  DashboardSummary,
+  Dataset,
+  Job,
+  JobEvent,
+  MediaAsset,
+  ModelVersion,
+  WorkerNode,
+} from "./types";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8092";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers = new Headers(init?.headers);
+  if (!(init?.body instanceof FormData) && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+
   const response = await fetch(`${API_BASE_URL}${path}`, {
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {}),
-    },
     ...init,
+    headers,
   });
 
   if (!response.ok) {
@@ -25,6 +42,44 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   getSummary: () => request<DashboardSummary>("/api/v1/dashboard/summary"),
+  getAssets: () => request<MediaAsset[]>("/api/v1/assets"),
+  createAsset: (payload: CreateMediaAssetPayload) =>
+    request<MediaAsset>("/api/v1/assets", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  uploadAsset: (formData: FormData) =>
+    request<MediaAsset>("/api/v1/assets/upload", {
+      method: "POST",
+      body: formData,
+    }),
+  createProcessJob: (payload: CreateProcessJobPayload) =>
+    request<Job>("/api/v1/assets/process-jobs", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  getDatasets: () => request<Dataset[]>("/api/v1/datasets"),
+  createDataset: (payload: CreateDatasetPayload) =>
+    request<Dataset>("/api/v1/datasets", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  createTrainJob: (datasetId: string, payload: CreateTrainJobPayload) =>
+    request<Job>(`/api/v1/datasets/${datasetId}/train-jobs`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  getModels: () => request<ModelVersion[]>("/api/v1/models"),
+  createModelVersion: (payload: CreateModelVersionPayload) =>
+    request<ModelVersion>("/api/v1/models", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  createInferJob: (modelVersionId: string, payload: CreateInferJobPayload) =>
+    request<Job>(`/api/v1/models/${modelVersionId}/infer-jobs`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   getWorkers: () => request<WorkerNode[]>("/api/v1/workers"),
   drainWorker: (nodeId: string) => request<WorkerNode>(`/api/v1/workers/${nodeId}/drain`, { method: "POST" }),
   activateWorker: (nodeId: string) => request<WorkerNode>(`/api/v1/workers/${nodeId}/activate`, { method: "POST" }),
@@ -36,4 +91,3 @@ export const api = {
       body: JSON.stringify(payload),
     }),
 };
-

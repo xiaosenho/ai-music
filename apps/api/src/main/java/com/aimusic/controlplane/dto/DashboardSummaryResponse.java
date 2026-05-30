@@ -10,6 +10,11 @@ public record DashboardSummaryResponse(
         long queuedJobs,
         long runningJobs,
         long failedJobs,
+        long totalAssets,
+        long totalDatasets,
+        long readyDatasets,
+        long totalModels,
+        long readyModels,
         List<StatusCountResponse> workerStatusCounts,
         List<StatusCountResponse> jobStatusCounts,
         List<StatusCountResponse> jobTypeCounts

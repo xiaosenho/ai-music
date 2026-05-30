@@ -26,6 +26,11 @@ export interface DashboardSummary {
   queuedJobs: number;
   runningJobs: number;
   failedJobs: number;
+  totalAssets: number;
+  totalDatasets: number;
+  readyDatasets: number;
+  totalModels: number;
+  readyModels: number;
   workerStatusCounts: StatusCount[];
   jobStatusCounts: StatusCount[];
   jobTypeCounts: StatusCount[];
@@ -107,3 +112,108 @@ export interface CreateJobPayload {
   payload?: Record<string, unknown>;
 }
 
+export type AssetType = "AUDIO" | "VIDEO" | "ZIP";
+export type AssetStatus = "UPLOADED" | "PROCESSING" | "APPROVED" | "REJECTED";
+export type DatasetStatus = "DRAFT" | "PROCESSING" | "READY" | "ARCHIVED";
+export type ModelVersionStatus = "DRAFT" | "TRAINING" | "READY" | "DEPRECATED";
+
+export interface MediaAsset {
+  id: string;
+  characterId: string | null;
+  name: string;
+  assetType: AssetType;
+  status: AssetStatus;
+  sourceUri: string | null;
+  objectKey: string | null;
+  durationSeconds: number | null;
+  language: string | null;
+  metadata: string | null;
+  note: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Dataset {
+  id: string;
+  characterId: string | null;
+  name: string;
+  status: DatasetStatus;
+  assetIds: string[];
+  segmentCount: number;
+  language: string | null;
+  note: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ModelVersion {
+  id: string;
+  characterId: string | null;
+  datasetId: string | null;
+  trainingJobId: string | null;
+  name: string;
+  status: ModelVersionStatus;
+  modelType: string;
+  storagePath: string | null;
+  sampleAudioUrl: string | null;
+  metrics: string | null;
+  note: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateMediaAssetPayload {
+  characterId?: string;
+  name: string;
+  assetType: AssetType;
+  sourceUri?: string;
+  objectKey?: string;
+  durationSeconds?: number;
+  language?: string;
+  note?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface CreateDatasetPayload {
+  characterId?: string;
+  name: string;
+  assetIds: string[];
+  segmentCount?: number;
+  language?: string;
+  note?: string;
+}
+
+export interface CreateModelVersionPayload {
+  characterId?: string;
+  datasetId?: string;
+  trainingJobId?: string;
+  name: string;
+  modelType: string;
+  storagePath?: string;
+  sampleAudioUrl?: string;
+  metrics?: string;
+  note?: string;
+}
+
+export interface CreateProcessJobPayload {
+  assetIds: string[];
+  datasetName: string;
+  language?: string;
+  note?: string;
+}
+
+export interface CreateTrainJobPayload {
+  modelName: string;
+  modelType: string;
+  sampleRate?: number;
+  f0Method?: string;
+  batchSize?: number;
+  totalEpoch?: number;
+  note?: string;
+}
+
+export interface CreateInferJobPayload {
+  inputAssetIds: string[];
+  executionMode: ExecutionMode;
+  note?: string;
+}

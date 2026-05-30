@@ -36,6 +36,7 @@ public class JobService {
     private final JobRepository jobRepository;
     private final JobEventRepository jobEventRepository;
     private final WorkerService workerService;
+    private final WorkflowResultService workflowResultService;
     private final ObjectMapper objectMapper;
     private final int jobLeaseSeconds;
 
@@ -43,12 +44,14 @@ public class JobService {
             JobRepository jobRepository,
             JobEventRepository jobEventRepository,
             WorkerService workerService,
+            WorkflowResultService workflowResultService,
             ObjectMapper objectMapper,
             @Value("${aimusic.worker.job-lease-seconds}") int jobLeaseSeconds
     ) {
         this.jobRepository = jobRepository;
         this.jobEventRepository = jobEventRepository;
         this.workerService = workerService;
+        this.workflowResultService = workflowResultService;
         this.objectMapper = objectMapper;
         this.jobLeaseSeconds = jobLeaseSeconds;
     }
@@ -127,6 +130,8 @@ public class JobService {
         if (request.resultManifest() != null) {
             job.setResultManifest(serialize(request.resultManifest()));
         }
+
+        workflowResultService.handle(job, job.getStatus(), request.resultManifest());
 
         if (request.status() == JobStatus.RUNNING && job.getStartedAt() == null) {
             job.setStartedAt(OffsetDateTime.now());

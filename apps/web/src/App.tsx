@@ -1,14 +1,35 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "./api";
 import type {
-  CreateJobPayload,
+  AssetType,
+  CreateInferJobPayload,
+  CreateProcessJobPayload,
+  CreateTrainJobPayload,
   DashboardSummary,
+  Dataset,
   ExecutionMode,
   Job,
   JobEvent,
-  JobType,
+  MediaAsset,
+  ModelVersion,
   WorkerNode,
 } from "./types";
+
+type ViewKey = "overview" | "upload" | "dataset" | "training" | "inference" | "nodes";
+
+type UploadFormState = {
+  assetType: AssetType;
+  language: string;
+  note: string;
+};
+
+type TrainFormState = CreateTrainJobPayload & {
+  datasetId: string;
+};
+
+type InferFormState = CreateInferJobPayload & {
+  modelVersionId: string;
+};
 
 const REFRESH_INTERVAL_MS = 15000;
 
@@ -20,46 +41,109 @@ const EMPTY_SUMMARY: DashboardSummary = {
   queuedJobs: 0,
   runningJobs: 0,
   failedJobs: 0,
+  totalAssets: 0,
+  totalDatasets: 0,
+  readyDatasets: 0,
+  totalModels: 0,
+  readyModels: 0,
   workerStatusCounts: [],
   jobStatusCounts: [],
   jobTypeCounts: [],
 };
 
-const DEFAULT_FORM: CreateJobPayload = {
-  jobType: "PROCESS",
-  executionMode: "CLOUD",
+const MENU = [
+  { key: "overview", label: "总览", helper: "看节点、任务与产能", section: "控制台" },
+  { key: "upload", label: "数据上传", helper: "上传原始素材到音频库", section: "数据流程" },
+  { key: "dataset", label: "数据集处理", helper: "发起提纯、切片和审核流程", section: "数据流程" },
+  { key: "training", label: "模型训练与保存", helper: "把 ready 数据集送去训练", section: "模型流程" },
+  { key: "inference", label: "模型推理", helper: "发起云端或本地推理任务", section: "模型流程" },
+  { key: "nodes", label: "执行节点", helper: "查看 AutoDL 与未来客户端执行器", section: "系统" },
+] as const satisfies ReadonlyArray<{
+  key: ViewKey;
+  label: string;
+  helper: string;
+  section: string;
+}>;
+
+const MENU_SECTIONS: Array<{ section: string; items: typeof MENU[number][] }> = [
+  { section: "控制台", items: MENU.filter((item) => item.section === "控制台") },
+  { section: "数据流程", items: MENU.filter((item) => item.section === "数据流程") },
+  { section: "模型流程", items: MENU.filter((item) => item.section === "模型流程") },
+  { section: "系统", items: MENU.filter((item) => item.section === "系统") },
+];
+
+const DEFAULT_UPLOAD_FORM: UploadFormState = {
+  assetType: "AUDIO",
+  language: "zh-CN",
+  note: "",
+};
+
+const DEFAULT_PROCESS_FORM: CreateProcessJobPayload = {
+  assetIds: [],
+  datasetName: "",
+  language: "zh-CN",
+  note: "",
+};
+
+const DEFAULT_TRAIN_FORM: TrainFormState = {
+  datasetId: "",
+  modelName: "",
+  modelType: "RVC",
+  sampleRate: 40000,
+  f0Method: "rmvpe",
+  batchSize: 8,
+  totalEpoch: 300,
+  note: "",
+};
+
+const DEFAULT_INFER_FORM: InferFormState = {
+  modelVersionId: "",
   inputAssetIds: [],
-  priority: 0,
-  maxRetries: 3,
-  payload: {},
+  executionMode: "CLOUD",
+  note: "",
 };
 
 export function App() {
+  const [view, setView] = useState<ViewKey>("overview");
   const [summary, setSummary] = useState<DashboardSummary>(EMPTY_SUMMARY);
   const [workers, setWorkers] = useState<WorkerNode[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [assets, setAssets] = useState<MediaAsset[]>([]);
+  const [datasets, setDatasets] = useState<Dataset[]>([]);
+  const [models, setModels] = useState<ModelVersion[]>([]);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [jobEvents, setJobEvents] = useState<JobEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [eventsLoading, setEventsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [submitMessage, setSubmitMessage] = useState<string | null>(null);
-  const [formState, setFormState] = useState<CreateJobPayload>(DEFAULT_FORM);
+  const [flash, setFlash] = useState<string | null>(null);
+  const [uploadForm, setUploadForm] = useState<UploadFormState>(DEFAULT_UPLOAD_FORM);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [processForm, setProcessForm] = useState<CreateProcessJobPayload>(DEFAULT_PROCESS_FORM);
+  const [trainForm, setTrainForm] = useState<TrainFormState>(DEFAULT_TRAIN_FORM);
+  const [inferForm, setInferForm] = useState<InferFormState>(DEFAULT_INFER_FORM);
 
   async function loadData() {
     try {
       setError(null);
-      const [summaryResponse, workersResponse, jobsResponse] = await Promise.all([
-        api.getSummary(),
-        api.getWorkers(),
-        api.getJobs(),
-      ]);
+      const [summaryResponse, workersResponse, jobsResponse, assetsResponse, datasetsResponse, modelsResponse] =
+        await Promise.all([
+          api.getSummary(),
+          api.getWorkers(),
+          api.getJobs(),
+          api.getAssets(),
+          api.getDatasets(),
+          api.getModels(),
+        ]);
       setSummary(summaryResponse);
       setWorkers(workersResponse);
       setJobs(jobsResponse);
+      setAssets(assetsResponse);
+      setDatasets(datasetsResponse);
+      setModels(modelsResponse);
       setSelectedJobId((current) => current ?? jobsResponse[0]?.id ?? null);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Failed to load data");
+      setError(loadError instanceof Error ? loadError.message : "加载失败");
     } finally {
       setLoading(false);
     }
@@ -81,7 +165,7 @@ export function App() {
     api.getJobEvents(selectedJobId)
       .then(setJobEvents)
       .catch((eventsError) => {
-        setError(eventsError instanceof Error ? eventsError.message : "Failed to load job events");
+        setError(eventsError instanceof Error ? eventsError.message : "加载事件流失败");
       })
       .finally(() => {
         setEventsLoading(false);
@@ -92,10 +176,23 @@ export function App() {
     () => jobs.find((job) => job.id === selectedJobId) ?? null,
     [jobs, selectedJobId],
   );
+  const processJobs = useMemo(() => jobs.filter((job) => job.jobType === "PROCESS"), [jobs]);
+  const trainingJobs = useMemo(() => jobs.filter((job) => job.jobType === "TRAIN"), [jobs]);
+  const inferJobs = useMemo(() => jobs.filter((job) => job.jobType === "INFER"), [jobs]);
+  const processableAssets = useMemo(
+    () => assets.filter((asset) => asset.status === "UPLOADED" || asset.status === "APPROVED"),
+    [assets],
+  );
+  const readyDatasets = useMemo(() => datasets.filter((dataset) => dataset.status === "READY"), [datasets]);
+  const readyModels = useMemo(() => models.filter((model) => model.status === "READY"), [models]);
+  const outputAssets = useMemo(
+    () => assets.filter((asset) => asset.note?.includes("generated by infer job")),
+    [assets],
+  );
 
   async function handleWorkerAction(nodeId: string, action: "drain" | "activate") {
     try {
-      setSubmitMessage(null);
+      setFlash(null);
       if (action === "drain") {
         await api.drainWorker(nodeId);
       } else {
@@ -103,278 +200,553 @@ export function App() {
       }
       await loadData();
     } catch (actionError) {
-      setError(actionError instanceof Error ? actionError.message : "Worker action failed");
+      setError(actionError instanceof Error ? actionError.message : "节点操作失败");
     }
   }
 
-  async function handleCreateJob(event: React.FormEvent<HTMLFormElement>) {
+  async function handleUploadAsset(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!uploadFile) {
+      setError("请选择要上传的文件。");
+      return;
+    }
+
     try {
-      setSubmitMessage(null);
-      setError(null);
-      const payload: CreateJobPayload = {
-        ...formState,
-        inputAssetIds: formState.inputAssetIds,
-        payload: formState.payload,
-      };
-      await api.createJob(payload);
-      setSubmitMessage("任务已创建。");
-      setFormState(DEFAULT_FORM);
+      setFlash(null);
+      const formData = new FormData();
+      formData.append("file", uploadFile);
+      formData.append("assetType", uploadForm.assetType);
+      if (uploadForm.language.trim()) {
+        formData.append("language", uploadForm.language.trim());
+      }
+      if (uploadForm.note.trim()) {
+        formData.append("note", uploadForm.note.trim());
+      }
+      await api.uploadAsset(formData);
+      setUploadFile(null);
+      setUploadForm(DEFAULT_UPLOAD_FORM);
+      const fileInput = document.getElementById("asset-file-input") as HTMLInputElement | null;
+      if (fileInput) {
+        fileInput.value = "";
+      }
+      setFlash("素材已上传到 COS 并完成登记。");
       await loadData();
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "Failed to create job");
+      setError(submitError instanceof Error ? submitError.message : "素材上传失败");
     }
   }
 
-  function updateForm<K extends keyof CreateJobPayload>(key: K, value: CreateJobPayload[K]) {
-    setFormState((current) => ({
-      ...current,
-      [key]: value,
-    }));
+  async function handleCreateProcessJob(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!processForm.assetIds.length) {
+      setError("请至少选择一个待处理素材。");
+      return;
+    }
+    if (!processForm.datasetName.trim()) {
+      setError("请填写处理后生成的数据集名称。");
+      return;
+    }
+
+    try {
+      setFlash(null);
+      await api.createProcessJob({
+        assetIds: processForm.assetIds,
+        datasetName: processForm.datasetName.trim(),
+        language: processForm.language?.trim() || undefined,
+        note: processForm.note?.trim() || undefined,
+      });
+      setProcessForm(DEFAULT_PROCESS_FORM);
+      setFlash("处理任务已进入队列。");
+      await loadData();
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "处理任务创建失败");
+    }
+  }
+
+  async function handleCreateTrainJob(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!trainForm.datasetId) {
+      setError("请先选择一个 ready 数据集。");
+      return;
+    }
+    if (!trainForm.modelName.trim()) {
+      setError("请填写模型名称。");
+      return;
+    }
+
+    try {
+      setFlash(null);
+      await api.createTrainJob(trainForm.datasetId, {
+        modelName: trainForm.modelName.trim(),
+        modelType: trainForm.modelType.trim() || "RVC",
+        sampleRate: trainForm.sampleRate,
+        f0Method: trainForm.f0Method?.trim() || undefined,
+        batchSize: trainForm.batchSize,
+        totalEpoch: trainForm.totalEpoch,
+        note: trainForm.note?.trim() || undefined,
+      });
+      setTrainForm(DEFAULT_TRAIN_FORM);
+      setFlash("训练任务已提交到 AutoDL 队列。");
+      await loadData();
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "训练任务创建失败");
+    }
+  }
+
+  async function handleCreateInferJob(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!inferForm.modelVersionId) {
+      setError("请先选择一个 ready 模型。");
+      return;
+    }
+    if (!inferForm.inputAssetIds.length) {
+      setError("请至少选择一个输入素材。");
+      return;
+    }
+
+    try {
+      setFlash(null);
+      await api.createInferJob(inferForm.modelVersionId, {
+        inputAssetIds: inferForm.inputAssetIds,
+        executionMode: inferForm.executionMode,
+        note: inferForm.note?.trim() || undefined,
+      });
+      setInferForm((current) => ({
+        ...DEFAULT_INFER_FORM,
+        executionMode: current.executionMode,
+      }));
+      setFlash("推理任务已创建。");
+      await loadData();
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "推理任务创建失败");
+    }
+  }
+
+  function updateUploadForm<K extends keyof UploadFormState>(key: K, value: UploadFormState[K]) {
+    setUploadForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function updateProcessForm<K extends keyof CreateProcessJobPayload>(key: K, value: CreateProcessJobPayload[K]) {
+    setProcessForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function updateTrainForm<K extends keyof TrainFormState>(key: K, value: TrainFormState[K]) {
+    setTrainForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function updateInferForm<K extends keyof InferFormState>(key: K, value: InferFormState[K]) {
+    setInferForm((current) => ({ ...current, [key]: value }));
   }
 
   return (
-    <div className="shell">
-      <div className="backdrop backdrop-a" />
-      <div className="backdrop backdrop-b" />
-
-      <header className="hero">
-        <div>
-          <p className="eyebrow">AI AUDIO CONTROL PLANE</p>
-          <h1>云端执行，本地扩展，围绕 AutoDL 的统一调度台。</h1>
-          <p className="hero-copy">
-            这里先把控制平面跑稳：节点注册、任务编排、状态流、事件审计。未来客户端本地推理也会沿用同一套任务体系。
-          </p>
+    <div className="admin-shell">
+      <aside className="sidebar">
+        <div className="brand">
+          <p>AI MUSIC OPS</p>
+          <h1>Voice Factory</h1>
+          <span>{loading ? "同步中" : "控制平面在线"}</span>
         </div>
-        <div className="hero-side">
-          <div className="status-chip">{loading ? "同步中" : "已连接"}</div>
-          <p>默认每 15 秒自动刷新一次 summary、节点和任务列表。</p>
-        </div>
-      </header>
 
-      {error ? <div className="banner error">{error}</div> : null}
-      {submitMessage ? <div className="banner success">{submitMessage}</div> : null}
-
-      <section className="metrics-grid">
-        <MetricCard label="在线节点" value={summary.onlineWorkers} accent="teal" sub={`${summary.totalWorkers} total`} />
-        <MetricCard label="忙碌节点" value={summary.busyWorkers} accent="orange" sub="正在处理任务" />
-        <MetricCard label="排队任务" value={summary.queuedJobs} accent="blue" sub={`${summary.totalJobs} total`} />
-        <MetricCard label="运行中任务" value={summary.runningJobs} accent="red" sub={`${summary.failedJobs} failed`} />
-      </section>
-
-      <section className="panel-grid">
-        <section className="panel">
-          <div className="panel-header">
-            <div>
-              <p className="panel-kicker">Dashboard</p>
-              <h2>状态概览</h2>
-            </div>
-          </div>
-          <div className="bars-grid">
-            <StatusBlock title="节点状态" counts={summary.workerStatusCounts} />
-            <StatusBlock title="任务状态" counts={summary.jobStatusCounts} />
-            <StatusBlock title="任务类型" counts={summary.jobTypeCounts} />
-          </div>
-        </section>
-
-        <section className="panel">
-          <div className="panel-header">
-            <div>
-              <p className="panel-kicker">Scheduler</p>
-              <h2>创建任务</h2>
-            </div>
-          </div>
-          <form className="job-form" onSubmit={handleCreateJob}>
-            <label>
-              任务类型
-              <select
-                value={formState.jobType}
-                onChange={(event) => updateForm("jobType", event.target.value as JobType)}
+        {MENU_SECTIONS.map(({ section, items }) => (
+          <div key={section} className="menu-section">
+            <p className="menu-title">{section}</p>
+            {items.map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                className={`menu-item ${view === item.key ? "active" : ""}`}
+                onClick={() => setView(item.key)}
               >
-                <option value="PROCESS">PROCESS</option>
-                <option value="TRAIN">TRAIN</option>
-                <option value="INFER">INFER</option>
-              </select>
-            </label>
-
-            <label>
-              执行模式
-              <select
-                value={formState.executionMode}
-                onChange={(event) => updateForm("executionMode", event.target.value as ExecutionMode)}
-              >
-                <option value="CLOUD">CLOUD</option>
-                <option value="LOCAL">LOCAL</option>
-                <option value="AUTO">AUTO</option>
-              </select>
-            </label>
-
-            <label>
-              优先级
-              <input
-                type="number"
-                value={formState.priority ?? 0}
-                onChange={(event) => updateForm("priority", Number(event.target.value))}
-              />
-            </label>
-
-            <label>
-              数据集版本
-              <input
-                value={formState.datasetVersion ?? ""}
-                onChange={(event) => updateForm("datasetVersion", event.target.value || undefined)}
-                placeholder="dataset-v1"
-              />
-            </label>
-
-            <label>
-              模型版本
-              <input
-                value={formState.modelVersion ?? ""}
-                onChange={(event) => updateForm("modelVersion", event.target.value || undefined)}
-                placeholder="model-v3"
-              />
-            </label>
-
-            <label className="span-2">
-              输入资源 ID
-              <textarea
-                value={(formState.inputAssetIds ?? []).join("\n")}
-                onChange={(event) =>
-                  updateForm(
-                    "inputAssetIds",
-                    event.target.value
-                      .split("\n")
-                      .map((item) => item.trim())
-                      .filter(Boolean),
-                  )
-                }
-                placeholder="一行一个 asset id"
-              />
-            </label>
-
-            <label className="span-2">
-              备注
-              <textarea
-                value={formState.note ?? ""}
-                onChange={(event) => updateForm("note", event.target.value || undefined)}
-                placeholder="任务意图、角色名、调度备注"
-              />
-            </label>
-
-            <button type="submit" className="primary-button">
-              创建任务
-            </button>
-          </form>
-        </section>
-      </section>
-
-      <section className="panel-grid">
-        <section className="panel">
-          <div className="panel-header">
-            <div>
-              <p className="panel-kicker">Workers</p>
-              <h2>执行节点</h2>
-            </div>
-          </div>
-          <div className="worker-list">
-            {workers.map((worker) => (
-              <article key={worker.nodeId} className="worker-card">
-                <div className="worker-head">
-                  <div>
-                    <h3>{worker.hostname}</h3>
-                    <p>{worker.provider} · {worker.nodeType}</p>
-                  </div>
-                  <span className={`pill status-${worker.status.toLowerCase()}`}>{worker.status}</span>
-                </div>
-                <dl>
-                  <div><dt>GPU</dt><dd>{worker.gpuName || "N/A"}</dd></div>
-                  <div><dt>显存</dt><dd>{worker.vramMb} MB</dd></div>
-                  <div><dt>支持任务</dt><dd>{worker.supportedJobTypes.join(", ")}</dd></div>
-                  <div><dt>当前任务</dt><dd>{worker.runningJobId || "-"}</dd></div>
-                </dl>
-                <div className="worker-actions">
-                  <button type="button" onClick={() => handleWorkerAction(worker.nodeId, "drain")}>
-                    Drain
-                  </button>
-                  <button type="button" onClick={() => handleWorkerAction(worker.nodeId, "activate")}>
-                    Activate
-                  </button>
-                </div>
-              </article>
+                <strong>{item.label}</strong>
+                <span>{item.helper}</span>
+              </button>
             ))}
-            {!workers.length && <p className="empty">还没有注册节点。</p>}
           </div>
-        </section>
+        ))}
+      </aside>
 
-        <section className="panel">
-          <div className="panel-header">
-            <div>
-              <p className="panel-kicker">Jobs</p>
-              <h2>任务队列</h2>
-            </div>
+      <main className="workspace">
+        <header className="workspace-header">
+          <div>
+            <p className="workspace-kicker">AI Audio Admin</p>
+            <h2>{MENU.find((item) => item.key === view)?.label}</h2>
           </div>
-          <div className="jobs-layout">
-            <div className="job-list">
-              {jobs.map((job) => (
-                <button
-                  key={job.id}
-                  type="button"
-                  className={`job-row ${selectedJobId === job.id ? "selected" : ""}`}
-                  onClick={() => setSelectedJobId(job.id)}
-                >
-                  <div>
-                    <strong>{job.jobType}</strong>
-                    <span>{job.executionMode}</span>
-                  </div>
-                  <div>
-                    <span className={`pill status-${job.status.toLowerCase()}`}>{job.status}</span>
-                    <small>{job.progressPercent}%</small>
-                  </div>
-                </button>
-              ))}
-              {!jobs.length && <p className="empty">还没有任务。</p>}
-            </div>
+          <div className="workspace-summary">
+            <span>{summary.onlineWorkers} 节点在线</span>
+            <span>{summary.runningJobs} 任务运行中</span>
+            <span>{summary.readyModels} 个可用模型</span>
+          </div>
+        </header>
 
-            <div className="job-detail">
-              {selectedJob ? (
-                <>
-                  <div className="detail-card">
-                    <h3>任务详情</h3>
-                    <DetailLine label="Job ID" value={selectedJob.id} />
-                    <DetailLine label="状态" value={selectedJob.status} />
-                    <DetailLine label="执行模式" value={selectedJob.executionMode} />
-                    <DetailLine label="节点" value={selectedJob.assignedNodeId || "-"} />
-                    <DetailLine label="数据集" value={selectedJob.datasetVersion || "-"} />
-                    <DetailLine label="模型" value={selectedJob.modelVersion || "-"} />
-                    <DetailLine label="备注" value={selectedJob.note || "-"} />
-                  </div>
+        {error ? <div className="banner error">{error}</div> : null}
+        {flash ? <div className="banner success">{flash}</div> : null}
 
-                  <div className="detail-card">
-                    <h3>事件流</h3>
-                    {eventsLoading ? <p className="empty">载入事件中...</p> : null}
-                    <div className="event-list">
+        {view === "overview" ? (
+          <section className="view-stack">
+            <section className="metric-grid">
+              <MetricCard label="素材总数" value={summary.totalAssets} accent="green" sub="原始与产出素材" />
+              <MetricCard label="数据集" value={summary.totalDatasets} accent="blue" sub={`${summary.readyDatasets} ready`} />
+              <MetricCard label="模型数" value={summary.totalModels} accent="orange" sub={`${summary.readyModels} ready`} />
+              <MetricCard label="节点在线" value={summary.onlineWorkers} accent="red" sub={`${summary.busyWorkers} busy`} />
+            </section>
+
+            <section className="three-column">
+              <Panel title="任务状态" subtitle="当前调度态势">
+                <StatusRail counts={summary.jobStatusCounts} />
+              </Panel>
+              <Panel title="任务类型" subtitle="按流程拆分">
+                <StatusRail counts={summary.jobTypeCounts} />
+              </Panel>
+              <Panel title="流程进度" subtitle="当前业务库存">
+                <div className="detail-stack compact">
+                  <DetailLine label="待处理素材" value={`${processableAssets.length}`} />
+                  <DetailLine label="Ready 数据集" value={`${readyDatasets.length}`} />
+                  <DetailLine label="Ready 模型" value={`${readyModels.length}`} />
+                  <DetailLine label="推理产物" value={`${outputAssets.length}`} />
+                </div>
+              </Panel>
+            </section>
+
+            <Panel title="最新任务" subtitle="点击任意任务即可查看事件流">
+              <JobTable jobs={jobs.slice(0, 8)} onSelect={setSelectedJobId} selectedJobId={selectedJobId} />
+            </Panel>
+          </section>
+        ) : null}
+
+        {view === "upload" ? (
+          <section className="view-stack">
+            <section className="two-column">
+              <Panel title="上传素材" subtitle="文件会直接进入腾讯云 COS 并登记到素材库">
+                <form className="admin-form" onSubmit={handleUploadAsset}>
+                  <Field label="选择文件" full>
+                    <input
+                      id="asset-file-input"
+                      type="file"
+                      accept="audio/*,video/*,.zip"
+                      onChange={(event) => setUploadFile(event.target.files?.[0] ?? null)}
+                    />
+                  </Field>
+                  <Field label="素材类型">
+                    <select
+                      value={uploadForm.assetType}
+                      onChange={(event) => updateUploadForm("assetType", event.target.value as AssetType)}
+                    >
+                      <option value="AUDIO">AUDIO</option>
+                      <option value="VIDEO">VIDEO</option>
+                      <option value="ZIP">ZIP</option>
+                    </select>
+                  </Field>
+                  <Field label="语言">
+                    <input
+                      value={uploadForm.language}
+                      onChange={(event) => updateUploadForm("language", event.target.value)}
+                      placeholder="zh-CN"
+                    />
+                  </Field>
+                  <Field label="备注" full>
+                    <textarea
+                      value={uploadForm.note}
+                      onChange={(event) => updateUploadForm("note", event.target.value)}
+                      placeholder="例如：角色素材、直播切片、对白合集"
+                    />
+                  </Field>
+                  <button className="primary-action" type="submit">上传并登记</button>
+                </form>
+              </Panel>
+
+              <Panel title="上传说明" subtitle="建议先把原始素材堆到这里，再进入处理流程">
+                <div className="detail-stack compact">
+                  <DetailLine label="可处理素材" value={`${processableAssets.length}`} />
+                  <DetailLine label="已审核素材" value={`${assets.filter((asset) => asset.status === "APPROVED").length}`} />
+                  <DetailLine label="当前输出素材" value={`${outputAssets.length}`} />
+                </div>
+                <p className="helper-text">
+                  建议把同一角色、同一语种的素材分批上传，后续在“数据集处理”里一次性发起提纯与切片。
+                </p>
+              </Panel>
+            </section>
+
+            <Panel title="素材列表" subtitle="上传成功后会出现在这里">
+              <AssetTable assets={assets} />
+            </Panel>
+          </section>
+        ) : null}
+
+        {view === "dataset" ? (
+          <section className="view-stack">
+            <section className="two-column">
+              <Panel title="发起处理任务" subtitle="把上传素材送入清洗、降噪、切片流程">
+                <form className="admin-form" onSubmit={handleCreateProcessJob}>
+                  <Field label="输出数据集名称">
+                    <input
+                      value={processForm.datasetName}
+                      onChange={(event) => updateProcessForm("datasetName", event.target.value)}
+                      placeholder="例如：hanser-clean-v1"
+                    />
+                  </Field>
+                  <Field label="语言">
+                    <input
+                      value={processForm.language ?? ""}
+                      onChange={(event) => updateProcessForm("language", event.target.value)}
+                      placeholder="zh-CN"
+                    />
+                  </Field>
+                  <Field label="选择素材" full>
+                    <SelectionGrid
+                      items={processableAssets.map((asset) => ({
+                        id: asset.id,
+                        title: asset.name,
+                        meta: `${asset.assetType} · ${asset.status}`,
+                      }))}
+                      selectedIds={processForm.assetIds}
+                      onChange={(assetIds) => updateProcessForm("assetIds", assetIds)}
+                    />
+                  </Field>
+                  <Field label="备注" full>
+                    <textarea
+                      value={processForm.note ?? ""}
+                      onChange={(event) => updateProcessForm("note", event.target.value)}
+                      placeholder="例如：优先保留独白，过滤背景音乐"
+                    />
+                  </Field>
+                  <button className="primary-action" type="submit">创建处理任务</button>
+                </form>
+              </Panel>
+
+              <Panel title="处理任务队列" subtitle="PROCESS 任务会在 AutoDL 上执行">
+                <JobListCard title="PROCESS 任务" jobs={processJobs} onSelect={setSelectedJobId} selectedJobId={selectedJobId} />
+              </Panel>
+            </section>
+
+            <Panel title="数据集列表" subtitle="处理完成的数据集会沉淀到这里">
+              <DatasetTable datasets={datasets} />
+            </Panel>
+          </section>
+        ) : null}
+
+        {view === "training" ? (
+          <section className="view-stack">
+            <section className="two-column">
+              <Panel title="发起训练任务" subtitle="训练任务会自动创建模型版本草稿并跟踪状态">
+                <form className="admin-form" onSubmit={handleCreateTrainJob}>
+                  <Field label="选择数据集">
+                    <select
+                      value={trainForm.datasetId}
+                      onChange={(event) => updateTrainForm("datasetId", event.target.value)}
+                    >
+                      <option value="">请选择 ready 数据集</option>
+                      {readyDatasets.map((dataset) => (
+                        <option key={dataset.id} value={dataset.id}>
+                          {dataset.name}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="模型名称">
+                    <input
+                      value={trainForm.modelName}
+                      onChange={(event) => updateTrainForm("modelName", event.target.value)}
+                      placeholder="例如：hanser-rvc-v1"
+                    />
+                  </Field>
+                  <Field label="模型类型">
+                    <input
+                      value={trainForm.modelType}
+                      onChange={(event) => updateTrainForm("modelType", event.target.value)}
+                    />
+                  </Field>
+                  <Field label="采样率">
+                    <input
+                      type="number"
+                      value={trainForm.sampleRate ?? 40000}
+                      onChange={(event) => updateTrainForm("sampleRate", Number(event.target.value))}
+                    />
+                  </Field>
+                  <Field label="F0 方法">
+                    <input
+                      value={trainForm.f0Method ?? ""}
+                      onChange={(event) => updateTrainForm("f0Method", event.target.value)}
+                    />
+                  </Field>
+                  <Field label="Batch Size">
+                    <input
+                      type="number"
+                      value={trainForm.batchSize ?? 8}
+                      onChange={(event) => updateTrainForm("batchSize", Number(event.target.value))}
+                    />
+                  </Field>
+                  <Field label="Epoch">
+                    <input
+                      type="number"
+                      value={trainForm.totalEpoch ?? 300}
+                      onChange={(event) => updateTrainForm("totalEpoch", Number(event.target.value))}
+                    />
+                  </Field>
+                  <Field label="备注" full>
+                    <textarea
+                      value={trainForm.note ?? ""}
+                      onChange={(event) => updateTrainForm("note", event.target.value)}
+                      placeholder="例如：偏高音角色、适合旁白"
+                    />
+                  </Field>
+                  <button className="primary-action" type="submit">创建训练任务</button>
+                </form>
+              </Panel>
+
+              <Panel title="训练任务" subtitle="查看 AutoDL 训练进度与失败重试">
+                <JobListCard title="TRAIN 任务" jobs={trainingJobs} onSelect={setSelectedJobId} selectedJobId={selectedJobId} />
+              </Panel>
+            </section>
+
+            <Panel title="模型版本列表" subtitle="训练完成后自动沉淀到模型库">
+              <ModelTable models={models} />
+            </Panel>
+          </section>
+        ) : null}
+
+        {view === "inference" ? (
+          <section className="view-stack">
+            <section className="two-column">
+              <Panel title="发起推理任务" subtitle="支持云端执行，也为未来客户端本地推理预留入口">
+                <form className="admin-form" onSubmit={handleCreateInferJob}>
+                  <Field label="选择模型">
+                    <select
+                      value={inferForm.modelVersionId}
+                      onChange={(event) => updateInferForm("modelVersionId", event.target.value)}
+                    >
+                      <option value="">请选择 ready 模型</option>
+                      {readyModels.map((model) => (
+                        <option key={model.id} value={model.id}>
+                          {model.name}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="执行模式">
+                    <select
+                      value={inferForm.executionMode}
+                      onChange={(event) => updateInferForm("executionMode", event.target.value as ExecutionMode)}
+                    >
+                      <option value="CLOUD">CLOUD</option>
+                      <option value="LOCAL">LOCAL</option>
+                      <option value="AUTO">AUTO</option>
+                    </select>
+                  </Field>
+                  <Field label="输入素材" full>
+                    <SelectionGrid
+                      items={assets.map((asset) => ({
+                        id: asset.id,
+                        title: asset.name,
+                        meta: `${asset.assetType} · ${asset.status}`,
+                      }))}
+                      selectedIds={inferForm.inputAssetIds}
+                      onChange={(inputAssetIds) => updateInferForm("inputAssetIds", inputAssetIds)}
+                    />
+                  </Field>
+                  <Field label="备注" full>
+                    <textarea
+                      value={inferForm.note ?? ""}
+                      onChange={(event) => updateInferForm("note", event.target.value)}
+                      placeholder="例如：第一版成品、保留呼吸声"
+                    />
+                  </Field>
+                  <button className="primary-action" type="submit">创建推理任务</button>
+                </form>
+              </Panel>
+
+              <Panel title="事件流" subtitle="观察当前选中任务的节点回报">
+                {selectedJob ? (
+                  <>
+                    <div className="detail-stack">
+                      <DetailLine label="任务 ID" value={selectedJob.id} />
+                      <DetailLine label="状态" value={selectedJob.status} />
+                      <DetailLine label="执行模式" value={selectedJob.executionMode} />
+                      <DetailLine label="模型版本" value={selectedJob.modelVersion || "-"} />
+                    </div>
+                    <div className="event-stream">
+                      {eventsLoading ? <p className="empty-state">事件流载入中...</p> : null}
                       {jobEvents.map((event) => (
-                        <article key={event.id} className="event-item">
+                        <article key={event.id} className="event-entry">
                           <div>
                             <strong>{event.eventType}</strong>
-                            <p>{event.message || "无消息"}</p>
+                            <p>{event.message || "无说明"}</p>
                           </div>
                           <time>{formatDate(event.createdAt)}</time>
                         </article>
                       ))}
-                      {!eventsLoading && !jobEvents.length ? <p className="empty">暂无事件。</p> : null}
+                      {!eventsLoading && !jobEvents.length ? <p className="empty-state">还没有事件。</p> : null}
                     </div>
-                  </div>
-                </>
-              ) : (
-                <p className="empty">选择一个任务查看详情。</p>
-              )}
-            </div>
-          </div>
-        </section>
-      </section>
+                  </>
+                ) : (
+                  <p className="empty-state">先从下方任务表选择一个任务。</p>
+                )}
+              </Panel>
+            </section>
+
+            <section className="two-column">
+              <Panel title="推理任务队列" subtitle="推理任务会产出新的音频资产">
+                <JobTable jobs={inferJobs} onSelect={setSelectedJobId} selectedJobId={selectedJobId} />
+              </Panel>
+              <Panel title="推理输出" subtitle="Worker 上报成功后自动登记回素材库">
+                <AssetTable assets={outputAssets} compact />
+              </Panel>
+            </section>
+          </section>
+        ) : null}
+
+        {view === "nodes" ? (
+          <section className="view-stack">
+            <section className="two-column">
+              <Panel title="执行节点" subtitle="AutoDL 与未来本地执行器">
+                <WorkerTable workers={workers} onAction={handleWorkerAction} />
+              </Panel>
+              <Panel title="节点状态分布" subtitle="用于判断当前可用算力">
+                <StatusRail counts={summary.workerStatusCounts} />
+              </Panel>
+            </section>
+          </section>
+        ) : null}
+      </main>
     </div>
+  );
+}
+
+function Panel({
+  title,
+  subtitle,
+  children,
+}: {
+  title: string;
+  subtitle: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="panel">
+      <div className="panel-head">
+        <div>
+          <h3>{title}</h3>
+          <p>{subtitle}</p>
+        </div>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function Field({
+  label,
+  children,
+  full = false,
+}: {
+  label: string;
+  children: React.ReactNode;
+  full?: boolean;
+}) {
+  return (
+    <label className={`field ${full ? "field-full" : ""}`}>
+      <span>{label}</span>
+      {children}
+    </label>
   );
 }
 
@@ -387,7 +759,7 @@ function MetricCard({
   label: string;
   value: number;
   sub: string;
-  accent: "teal" | "orange" | "blue" | "red";
+  accent: "green" | "blue" | "orange" | "red";
 }) {
   return (
     <article className={`metric-card accent-${accent}`}>
@@ -398,26 +770,247 @@ function MetricCard({
   );
 }
 
-function StatusBlock({ title, counts }: { title: string; counts: Array<{ key: string; count: number }> }) {
+function StatusRail({ counts }: { counts: Array<{ key: string; count: number }> }) {
   const max = Math.max(...counts.map((item) => item.count), 1);
+  return (
+    <div className="status-rail">
+      {counts.map((item) => (
+        <div key={item.key} className="status-row">
+          <div className="status-labels">
+            <span>{item.key}</span>
+            <strong>{item.count}</strong>
+          </div>
+          <div className="status-bar">
+            <div style={{ width: `${(item.count / max) * 100}%` }} />
+          </div>
+        </div>
+      ))}
+      {!counts.length ? <p className="empty-state">暂无状态数据。</p> : null}
+    </div>
+  );
+}
+
+function SelectionGrid({
+  items,
+  selectedIds,
+  onChange,
+}: {
+  items: Array<{ id: string; title: string; meta: string }>;
+  selectedIds: string[];
+  onChange: (ids: string[]) => void;
+}) {
+  function toggle(id: string) {
+    if (selectedIds.includes(id)) {
+      onChange(selectedIds.filter((item) => item !== id));
+      return;
+    }
+    onChange([...selectedIds, id]);
+  }
 
   return (
-    <div className="status-block">
-      <h3>{title}</h3>
-      <div className="status-list">
-        {counts.map((item) => (
-          <div key={item.key} className="status-row">
-            <div className="status-meta">
-              <span>{item.key}</span>
-              <strong>{item.count}</strong>
+    <div className="selection-grid">
+      {items.map((item) => (
+        <button
+          key={item.id}
+          type="button"
+          className={`selection-card ${selectedIds.includes(item.id) ? "selected" : ""}`}
+          onClick={() => toggle(item.id)}
+        >
+          <strong>{item.title}</strong>
+          <span>{item.meta}</span>
+          <small>{item.id}</small>
+        </button>
+      ))}
+      {!items.length ? <p className="empty-state">当前没有可选项。</p> : null}
+    </div>
+  );
+}
+
+function AssetTable({ assets, compact = false }: { assets: MediaAsset[]; compact?: boolean }) {
+  return (
+    <div className="table-shell">
+      <table className={`admin-table ${compact ? "compact-table" : ""}`}>
+        <thead>
+          <tr>
+            <th>名称</th>
+            <th>类型</th>
+            <th>状态</th>
+            <th>来源</th>
+            <th>时长</th>
+            <th>时间</th>
+          </tr>
+        </thead>
+        <tbody>
+          {assets.map((asset) => (
+            <tr key={asset.id}>
+              <td>{asset.name}</td>
+              <td>{asset.assetType}</td>
+              <td><span className={`pill status-${asset.status.toLowerCase()}`}>{asset.status}</span></td>
+              <td className="truncate">{asset.sourceUri || asset.objectKey || "-"}</td>
+              <td>{asset.durationSeconds ?? "-"}</td>
+              <td>{formatDate(asset.createdAt)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {!assets.length ? <p className="empty-state">还没有素材记录。</p> : null}
+    </div>
+  );
+}
+
+function DatasetTable({ datasets }: { datasets: Dataset[] }) {
+  return (
+    <div className="table-shell">
+      <table className="admin-table">
+        <thead>
+          <tr>
+            <th>名称</th>
+            <th>状态</th>
+            <th>素材数</th>
+            <th>片段数</th>
+            <th>语言</th>
+            <th>时间</th>
+          </tr>
+        </thead>
+        <tbody>
+          {datasets.map((dataset) => (
+            <tr key={dataset.id}>
+              <td>{dataset.name}</td>
+              <td><span className={`pill status-${dataset.status.toLowerCase()}`}>{dataset.status}</span></td>
+              <td>{dataset.assetIds.length}</td>
+              <td>{dataset.segmentCount}</td>
+              <td>{dataset.language || "-"}</td>
+              <td>{formatDate(dataset.createdAt)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {!datasets.length ? <p className="empty-state">还没有数据集。</p> : null}
+    </div>
+  );
+}
+
+function ModelTable({ models }: { models: ModelVersion[] }) {
+  return (
+    <div className="table-shell">
+      <table className="admin-table">
+        <thead>
+          <tr>
+            <th>名称</th>
+            <th>状态</th>
+            <th>类型</th>
+            <th>数据集</th>
+            <th>存储路径</th>
+          </tr>
+        </thead>
+        <tbody>
+          {models.map((model) => (
+            <tr key={model.id}>
+              <td>{model.name}</td>
+              <td><span className={`pill status-${model.status.toLowerCase()}`}>{model.status}</span></td>
+              <td>{model.modelType}</td>
+              <td>{model.datasetId || "-"}</td>
+              <td className="truncate">{model.storagePath || "-"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {!models.length ? <p className="empty-state">还没有模型版本。</p> : null}
+    </div>
+  );
+}
+
+function JobTable({
+  jobs,
+  onSelect,
+  selectedJobId,
+}: {
+  jobs: Job[];
+  onSelect: (jobId: string) => void;
+  selectedJobId: string | null;
+}) {
+  return (
+    <div className="table-shell">
+      <table className="admin-table">
+        <thead>
+          <tr>
+            <th>任务类型</th>
+            <th>状态</th>
+            <th>执行模式</th>
+            <th>版本</th>
+            <th>进度</th>
+          </tr>
+        </thead>
+        <tbody>
+          {jobs.map((job) => (
+            <tr
+              key={job.id}
+              className={selectedJobId === job.id ? "selected-row" : ""}
+              onClick={() => onSelect(job.id)}
+            >
+              <td>{job.jobType}</td>
+              <td><span className={`pill status-${job.status.toLowerCase()}`}>{job.status}</span></td>
+              <td>{job.executionMode}</td>
+              <td>{job.modelVersion || job.datasetVersion || "-"}</td>
+              <td>{job.progressPercent}%</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {!jobs.length ? <p className="empty-state">当前没有任务。</p> : null}
+    </div>
+  );
+}
+
+function JobListCard({
+  title,
+  jobs,
+  onSelect,
+  selectedJobId,
+}: {
+  title: string;
+  jobs: Job[];
+  onSelect: (jobId: string) => void;
+  selectedJobId: string | null;
+}) {
+  return (
+    <>
+      <p className="mini-title">{title}</p>
+      <JobTable jobs={jobs} onSelect={onSelect} selectedJobId={selectedJobId} />
+    </>
+  );
+}
+
+function WorkerTable({
+  workers,
+  onAction,
+}: {
+  workers: WorkerNode[];
+  onAction: (nodeId: string, action: "drain" | "activate") => void;
+}) {
+  return (
+    <div className="worker-grid">
+      {workers.map((worker) => (
+        <article key={worker.nodeId} className="worker-card">
+          <div className="worker-top">
+            <div>
+              <h4>{worker.hostname}</h4>
+              <p>{worker.provider} · {worker.nodeType}</p>
             </div>
-            <div className="status-bar">
-              <div style={{ width: `${(item.count / max) * 100}%` }} />
-            </div>
+            <span className={`pill status-${worker.status.toLowerCase()}`}>{worker.status}</span>
           </div>
-        ))}
-        {!counts.length && <p className="empty">暂无数据。</p>}
-      </div>
+          <div className="worker-meta">
+            <span>GPU: {worker.gpuName || "N/A"}</span>
+            <span>显存: {worker.vramMb} MB</span>
+            <span>任务: {worker.runningJobId || "-"}</span>
+          </div>
+          <div className="worker-actions">
+            <button type="button" onClick={() => onAction(worker.nodeId, "drain")}>Drain</button>
+            <button type="button" onClick={() => onAction(worker.nodeId, "activate")}>Activate</button>
+          </div>
+        </article>
+      ))}
+      {!workers.length ? <p className="empty-state">还没有注册节点。</p> : null}
     </div>
   );
 }
@@ -432,9 +1025,6 @@ function DetailLine({ label, value }: { label: string; value: string }) {
 }
 
 function formatDate(value: string | null) {
-  if (!value) {
-    return "-";
-  }
+  if (!value) return "-";
   return new Date(value).toLocaleString("zh-CN");
 }
-
