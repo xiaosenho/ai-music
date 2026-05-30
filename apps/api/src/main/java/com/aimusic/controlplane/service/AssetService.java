@@ -54,6 +54,12 @@ public class AssetService {
         return mediaAssetRepository.findAllByOrderByCreatedAtDesc().stream().map(this::toResponse).toList();
     }
 
+    @Transactional(readOnly = true)
+    public MediaAssetResponse get(UUID id) {
+        return toResponse(mediaAssetRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Asset not found: " + id)));
+    }
+
     @Transactional
     public MediaAssetResponse createUploadedAsset(
             String name,

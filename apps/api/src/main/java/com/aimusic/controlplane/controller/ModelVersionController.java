@@ -2,6 +2,7 @@ package com.aimusic.controlplane.controller;
 
 import com.aimusic.controlplane.dto.CreateInferJobRequest;
 import com.aimusic.controlplane.dto.CreateModelVersionRequest;
+import com.aimusic.controlplane.dto.DirectDownloadTicketResponse;
 import com.aimusic.controlplane.dto.JobResponse;
 import com.aimusic.controlplane.dto.ModelVersionResponse;
 import com.aimusic.controlplane.service.ModelVersionService;
@@ -33,6 +34,11 @@ public class ModelVersionController {
         return modelVersionService.list();
     }
 
+    @GetMapping("/{modelVersionId}")
+    public ModelVersionResponse get(@PathVariable UUID modelVersionId) {
+        return modelVersionService.get(modelVersionId);
+    }
+
     @PostMapping
     public ModelVersionResponse create(@Valid @RequestBody CreateModelVersionRequest request) {
         return modelVersionService.create(request);
@@ -44,5 +50,15 @@ public class ModelVersionController {
             @Valid @RequestBody CreateInferJobRequest request
     ) {
         return workflowService.createInferJob(modelVersionId, request);
+    }
+
+    @PostMapping("/{modelVersionId}/download-ticket")
+    public DirectDownloadTicketResponse prepareDownload(@PathVariable UUID modelVersionId) {
+        ModelVersionResponse modelVersion = modelVersionService.get(modelVersionId);
+        if (modelVersion.storagePath() == null || modelVersion.storagePath().isBlank()) {
+            throw new IllegalArgumentException("Model version does not have an artifact path");
+        }
+        var ticket = workflowService.prepareModelArtifactDownload(modelVersion.storagePath());
+        return new DirectDownloadTicketResponse(ticket.objectKey(), ticket.downloadUrl(), ticket.expiresAt());
     }
 }

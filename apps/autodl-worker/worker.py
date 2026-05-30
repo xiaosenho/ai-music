@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
+import http.client
 import json
+import mimetypes
 import os
 import signal
+import shutil
 import socket
 import subprocess
 import sys
@@ -12,6 +15,7 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+from urllib import parse
 from urllib import error, request
 
 
@@ -49,6 +53,7 @@ class WorkerConfig:
     progress_interval_seconds: int = field(default_factory=lambda: read_int("AIMUSIC_WORKER_PROGRESS_INTERVAL_SECONDS", 10))
     mock_delay_seconds: int = field(default_factory=lambda: read_int("AIMUSIC_WORKER_MOCK_DELAY_SECONDS", 2))
     use_mock_executor: bool = field(default_factory=lambda: read_bool("AIMUSIC_WORKER_USE_MOCK_EXECUTOR", True))
+    prefetch_resources: bool = field(default_factory=lambda: read_bool("AIMUSIC_WORKER_PREFETCH_RESOURCES", True))
     process_command: str = field(default_factory=lambda: read_env("AIMUSIC_PROCESS_COMMAND", ""))
     train_command: str = field(default_factory=lambda: read_env("AIMUSIC_TRAIN_COMMAND", ""))
     infer_command: str = field(default_factory=lambda: read_env("AIMUSIC_INFER_COMMAND", ""))
@@ -65,6 +70,19 @@ class ControlPlaneClient:
         url = self.base_url + path
         body = json.dumps(payload).encode("utf-8")
         req = request.Request(url, data=body, headers={"Content-Type": "application/json"}, method="POST")
+        try:
+            with request.urlopen(req, timeout=self.timeout_seconds) as response:
+                raw = response.read()
+                return json.loads(raw.decode("utf-8")) if raw else {}
+        except error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError("HTTP %s %s failed: %s" % (exc.code, path, detail))
+        except error.URLError as exc:
+            raise RuntimeError("Request to %s failed: %s" % (path, exc.reason))
+
+    def get_json(self, path: str) -> Dict[str, Any]:
+        url = self.base_url + path
+        req = request.Request(url, headers={"Accept": "application/json"}, method="GET")
         try:
             with request.urlopen(req, timeout=self.timeout_seconds) as response:
                 raw = response.read()
@@ -249,16 +267,170 @@ class AutoDlWorker:
     def build_run_context(self, job: Dict[str, Any], run_dir: Path) -> Dict[str, Any]:
         payload = parse_json_string(job.get("payload"))
         result_manifest = parse_json_string(job.get("resultManifest"))
+        resources = self.prepare_job_resources(job, payload, run_dir)
         context = {
             "job": job,
             "payload": payload,
             "resultManifest": result_manifest,
+            "resources": resources,
             "nodeId": self.node_id,
             "runDir": str(run_dir),
         }
         write_json(run_dir / "context.json", context)
         write_json(run_dir / "payload.json", payload)
+        write_json(run_dir / "resources.json", resources)
         return context
+
+    def prepare_job_resources(self, job: Dict[str, Any], payload: Dict[str, Any], run_dir: Path) -> Dict[str, Any]:
+        resources = {
+            "assets": [],
+            "dataset": None,
+            "model": None,
+        }
+        if not self.config.prefetch_resources:
+            return resources
+
+        job_type = str(job.get("jobType", "")).upper()
+        asset_ids = list(job.get("inputAssetIds") or [])
+
+        if job_type == "TRAIN":
+            dataset_id = payload.get("datasetId")
+            if dataset_id:
+                dataset = self.fetch_dataset(str(dataset_id))
+                resources["dataset"] = dataset
+                asset_ids = list(dataset.get("assetIds") or [])
+
+        if job_type == "INFER":
+            model_version_id = payload.get("modelVersionId")
+            if model_version_id:
+                model = self.fetch_model(str(model_version_id))
+                model_resources = dict(model)
+                local_model_path = self.download_model_artifact(model, run_dir)
+                if local_model_path:
+                    model_resources["localPath"] = local_model_path
+                resources["model"] = model_resources
+
+        inputs_dir = run_dir / "inputs"
+        inputs_dir.mkdir(parents=True, exist_ok=True)
+        for asset_id in asset_ids:
+            asset = self.fetch_asset(str(asset_id))
+            asset_resource = dict(asset)
+            local_path = self.download_asset(asset, inputs_dir)
+            if local_path:
+                asset_resource["localPath"] = local_path
+            resources["assets"].append(asset_resource)
+
+        return resources
+
+    def fetch_asset(self, asset_id: str) -> Dict[str, Any]:
+        return self.client.get_json("/api/v1/assets/%s" % asset_id)
+
+    def fetch_dataset(self, dataset_id: str) -> Dict[str, Any]:
+        return self.client.get_json("/api/v1/datasets/%s" % dataset_id)
+
+    def fetch_model(self, model_version_id: str) -> Dict[str, Any]:
+        return self.client.get_json("/api/v1/models/%s" % model_version_id)
+
+    def download_asset(self, asset: Dict[str, Any], target_dir: Path) -> Optional[str]:
+        source_url = None
+        object_key = asset.get("objectKey")
+        if object_key:
+            ticket = self.client.post_json("/api/v1/assets/%s/download-ticket" % asset["id"], {})
+            source_url = ticket.get("downloadUrl")
+        elif asset.get("sourceUri"):
+            source_url = asset.get("sourceUri")
+
+        if not source_url:
+            return None
+
+        target_path = target_dir / build_file_name(asset.get("name"), asset.get("sourceUri"), object_key)
+        download_file(source_url, target_path, self.config.request_timeout_seconds)
+        return str(target_path)
+
+    def download_model_artifact(self, model: Dict[str, Any], run_dir: Path) -> Optional[str]:
+        storage_path = model.get("storagePath")
+        if not storage_path:
+            return None
+
+        ticket = self.client.post_json("/api/v1/models/%s/download-ticket" % model["id"], {})
+        download_url = ticket.get("downloadUrl")
+        if not download_url:
+            return None
+
+        model_dir = run_dir / "model"
+        model_dir.mkdir(parents=True, exist_ok=True)
+        target_path = model_dir / build_file_name(model.get("name"), storage_path, ticket.get("objectKey"))
+        download_file(download_url, target_path, self.config.request_timeout_seconds)
+        return str(target_path)
+
+    def prepare_storage_upload(self, file_name: str, category: str) -> Dict[str, Any]:
+        return self.client.post_json("/api/v1/storage/upload-prepare", {
+            "fileName": file_name,
+            "category": category,
+        })
+
+    def upload_file_to_cos(self, local_path: Path, ticket: Dict[str, Any]) -> None:
+        content_type = mimetypes.guess_type(local_path.name)[0] or "application/octet-stream"
+        parsed = parse.urlparse(ticket["uploadUrl"])
+        connection_class = http.client.HTTPSConnection if parsed.scheme == "https" else http.client.HTTPConnection
+        connection = connection_class(parsed.netloc, timeout=max(self.config.request_timeout_seconds, 300))
+        request_path = parsed.path + (("?" + parsed.query) if parsed.query else "")
+        headers = {
+            "Content-Type": content_type,
+            "Content-Length": str(local_path.stat().st_size),
+            **(ticket.get("headers") or {}),
+        }
+
+        try:
+            connection.putrequest("PUT", request_path)
+            for key, value in headers.items():
+                connection.putheader(key, value)
+            connection.endheaders()
+            with local_path.open("rb") as file_handle:
+                while True:
+                    chunk = file_handle.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    connection.send(chunk)
+            response = connection.getresponse()
+            body = response.read().decode("utf-8", errors="replace")
+            if response.status >= 400:
+                raise RuntimeError("COS upload failed for %s: %s" % (local_path, body or response.reason))
+        finally:
+            connection.close()
+
+    def finalize_result_manifest(self, job: Dict[str, Any], manifest: Dict[str, Any]) -> Dict[str, Any]:
+        finalized = dict(manifest or {})
+        job_type = str(job.get("jobType", "")).upper()
+
+        if job_type == "TRAIN":
+            local_model_path = pop_string(finalized, "localModelPath")
+            if local_model_path:
+                model_file = Path(local_model_path)
+                ticket = self.prepare_storage_upload(model_file.name, "models")
+                self.upload_file_to_cos(model_file, ticket)
+                finalized["storagePath"] = "cos://%s" % ticket["objectKey"]
+                finalized["storageObjectKey"] = ticket["objectKey"]
+
+            local_sample_audio_path = pop_string(finalized, "localSampleAudioPath")
+            if local_sample_audio_path:
+                preview_file = Path(local_sample_audio_path)
+                ticket = self.prepare_storage_upload(preview_file.name, "previews")
+                self.upload_file_to_cos(preview_file, ticket)
+                finalized["sampleAudioUrl"] = ticket["publicUrl"]
+                finalized["sampleAudioObjectKey"] = ticket["objectKey"]
+
+        if job_type == "INFER":
+            local_output_path = pop_string(finalized, "localOutputPath")
+            if local_output_path:
+                output_file = Path(local_output_path)
+                ticket = self.prepare_storage_upload(output_file.name, "outputs")
+                self.upload_file_to_cos(output_file, ticket)
+                finalized["outputObjectKey"] = ticket["objectKey"]
+                finalized["outputUrl"] = ticket["publicUrl"]
+                finalized["outputName"] = finalized.get("outputName") or output_file.name
+
+        return finalized
 
     def command_for_job(self, job_type: str) -> str:
         if job_type == "PROCESS":
@@ -288,6 +460,7 @@ class AutoDlWorker:
             else:
                 raise RuntimeError("No command configured for job type %s" % job_type)
 
+            result_manifest = self.finalize_result_manifest(job, result_manifest)
             self.report_status(job_id, "SUCCEEDED", 100, "Job finished", result_manifest=result_manifest)
             print("[worker] job %s finished successfully" % job_id)
         except Exception as exc:
@@ -377,10 +550,14 @@ class AutoDlWorker:
                 "summary": "mock process complete",
             }
         elif job_type == "TRAIN":
+            model_path = run_dir / "mock-model.pth"
+            sample_audio_path = run_dir / "mock-preview.wav"
+            model_path.write_bytes(b"MOCKMODEL")
+            sample_audio_path.write_bytes(b"RIFFMOCKPREVIEW")
             manifest = {
                 "workflow": payload.get("workflow", "dataset-train"),
-                "storagePath": "cos://models/%s/model.pth" % job["id"],
-                "sampleAudioUrl": "https://example.invalid/previews/%s.wav" % job["id"],
+                "localModelPath": str(model_path),
+                "localSampleAudioPath": str(sample_audio_path),
                 "metrics": {
                     "epochs": job.get("totalEpoch") or 300,
                     "sampleRate": job.get("sampleRate") or 40000,
@@ -392,8 +569,7 @@ class AutoDlWorker:
             output_path.write_bytes(b"RIFFMOCKAUDIO")
             manifest = {
                 "workflow": payload.get("workflow", "model-infer"),
-                "outputObjectKey": "outputs/%s/output.wav" % job["id"],
-                "outputUrl": str(output_path),
+                "localOutputPath": str(output_path),
                 "outputName": "infer-%s.wav" % job["id"],
             }
         else:
@@ -466,6 +642,44 @@ def load_json_if_exists(path: Path) -> Dict[str, Any]:
 
 def write_json(path: Path, payload: Dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def download_file(url: str, target_path: Path, timeout_seconds: int) -> None:
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    with request.urlopen(url, timeout=max(timeout_seconds, 300)) as response, target_path.open("wb") as output:
+        shutil.copyfileobj(response, output)
+
+
+def build_file_name(name: Any, reference: Any, object_key: Any) -> str:
+    base_name = sanitize_file_name(str(name) if name else "resource")
+    suffix = detect_suffix(reference, object_key)
+    if suffix and not base_name.lower().endswith(suffix.lower()):
+        return base_name + suffix
+    return base_name
+
+
+def detect_suffix(reference: Any, object_key: Any) -> str:
+    candidates = [reference, object_key]
+    for candidate in candidates:
+        if isinstance(candidate, str) and candidate:
+            parsed = parse.urlparse(candidate)
+            path = parsed.path if parsed.path else candidate
+            suffix = Path(path).suffix
+            if suffix:
+                return suffix
+    return ""
+
+
+def sanitize_file_name(value: str) -> str:
+    cleaned = "".join(ch if ch.isalnum() or ch in {".", "-", "_"} else "_" for ch in value.strip())
+    return cleaned or "resource"
+
+
+def pop_string(payload: Dict[str, Any], key: str) -> Optional[str]:
+    value = payload.pop(key, None)
+    if isinstance(value, str) and value.strip():
+        return value
+    return None
 
 
 def tail_text(path: Path, limit: int = 4000) -> str:

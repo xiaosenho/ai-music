@@ -5,9 +5,11 @@
 - worker registration
 - periodic heartbeat
 - job polling
+- asset / dataset / model metadata fetch
+- resource prefetch into local run directories
 - PROCESS / TRAIN / INFER execution
-- job status reporting
-- result manifest upload-back metadata
+- direct COS upload for weights and inference outputs
+- job status reporting and backend metadata callback
 
 ## Runtime
 
@@ -38,8 +40,8 @@ AIMUSIC_WORKER_USE_MOCK_EXECUTOR=true
 This is useful for control-plane integration testing. The worker will simulate:
 
 - process job completion with `segmentCount`
-- train job completion with `storagePath`, `sampleAudioUrl`, `metrics`
-- infer job completion with `outputObjectKey`, `outputUrl`, `outputName`
+- train job completion with local files that are auto-uploaded to COS
+- infer job completion with local files that are auto-uploaded to COS
 
 ### 2. Real command mode
 
@@ -70,6 +72,7 @@ Before executing a job, the worker writes:
 
 - `runs/<jobId>/context.json`
 - `runs/<jobId>/payload.json`
+- `runs/<jobId>/resources.json`
 
 During execution, your script can optionally write:
 
@@ -102,8 +105,8 @@ Examples:
 
 ```json
 {
-  "storagePath": "cos://models/hanser-rvc-v1/model.pth",
-  "sampleAudioUrl": "https://cdn.example.com/previews/hanser-rvc-v1.wav",
+  "localModelPath": "/root/autodl-tmp/job-123/model.pth",
+  "localSampleAudioPath": "/root/autodl-tmp/job-123/preview.wav",
   "metrics": {
     "loss": 0.038,
     "epochs": 300
@@ -111,15 +114,30 @@ Examples:
 }
 ```
 
+Worker behavior:
+
+- uploads `localModelPath` to COS
+- uploads `localSampleAudioPath` to COS
+- rewrites the manifest before reporting:
+  - `storagePath=cos://...`
+  - `sampleAudioUrl=https://...`
+
 ### INFER
 
 ```json
 {
-  "outputObjectKey": "outputs/job-123/result.wav",
-  "outputUrl": "https://cdn.example.com/outputs/job-123/result.wav",
+  "localOutputPath": "/root/autodl-tmp/job-123/result.wav",
   "outputName": "hanser-demo.wav"
 }
 ```
+
+Worker behavior:
+
+- uploads `localOutputPath` to COS
+- rewrites the manifest before reporting:
+  - `outputObjectKey=...`
+  - `outputUrl=https://...`
+  - `outputName=...`
 
 ## Example scripts
 

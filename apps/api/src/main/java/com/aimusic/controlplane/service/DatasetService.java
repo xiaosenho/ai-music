@@ -39,6 +39,11 @@ public class DatasetService {
         return datasetRepository.findAllByOrderByCreatedAtDesc().stream().map(this::toResponse).toList();
     }
 
+    @Transactional(readOnly = true)
+    public DatasetResponse get(UUID id) {
+        return toResponse(require(id));
+    }
+
     @Transactional
     public Dataset createProcessingDataset(String name, List<String> assetIds, String language, String note) {
         Dataset dataset = new Dataset();

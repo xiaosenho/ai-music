@@ -22,8 +22,7 @@ def main() -> int:
     output_path = run_dir / "result.wav"
     output_path.write_bytes(b"RIFFMOCKAUDIO")
     write_json(run_dir / "result_manifest.json", {
-        "outputObjectKey": "outputs/%s/result.wav" % job["id"],
-        "outputUrl": str(output_path),
+        "localOutputPath": str(output_path),
         "outputName": "infer-%s.wav" % job["id"],
     })
     return 0

@@ -19,9 +19,14 @@ def main() -> int:
         write_json(run_dir / "progress.json", {"progressPercent": progress, "message": message})
         time.sleep(1)
 
+    model_path = run_dir / "trained-model.pth"
+    sample_audio_path = run_dir / "preview.wav"
+    model_path.write_bytes(b"MOCKMODEL")
+    sample_audio_path.write_bytes(b"RIFFMOCKPREVIEW")
+
     write_json(run_dir / "result_manifest.json", {
-        "storagePath": "cos://models/%s/model.pth" % job["id"],
-        "sampleAudioUrl": "https://example.invalid/previews/%s.wav" % job["id"],
+        "localModelPath": str(model_path),
+        "localSampleAudioPath": str(sample_audio_path),
         "metrics": {
             "epochs": job.get("totalEpoch") or 300,
             "sampleRate": job.get("sampleRate") or 40000,

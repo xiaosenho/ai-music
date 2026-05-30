@@ -67,6 +67,21 @@ public class CosStorageService {
         }
     }
 
+    public DirectDownloadTicket prepareDirectDownload(String objectKey) {
+        String normalizedObjectKey = normalizeObjectKey(objectKey);
+        OffsetDateTime expiresAt = OffsetDateTime.now().plusSeconds(uploadTokenTtlSeconds);
+        COSClient client = createClient();
+
+        try {
+            GeneratePresignedUrlRequest request = new GeneratePresignedUrlRequest(bucket, normalizedObjectKey, HttpMethodName.GET);
+            request.setExpiration(Date.from(expiresAt.toInstant()));
+            URL downloadUrl = client.generatePresignedUrl(request);
+            return new DirectDownloadTicket(normalizedObjectKey, downloadUrl.toString(), expiresAt);
+        } finally {
+            client.shutdown();
+        }
+    }
+
     public String publicUrlFor(String objectKey) {
         return publicBaseUrl.endsWith("/")
                 ? publicBaseUrl + objectKey
@@ -85,11 +100,40 @@ public class CosStorageService {
         return category + "/" + datePath + "/" + UUID.randomUUID() + "-" + filename.replaceAll("\\s+", "_");
     }
 
+    public String normalizeObjectKey(String reference) {
+        if (reference == null || reference.isBlank()) {
+            throw new IllegalArgumentException("Object key is blank");
+        }
+
+        String value = reference.trim();
+        if (value.startsWith("cos://")) {
+            value = value.substring("cos://".length());
+            if (value.startsWith(bucket + "/")) {
+                return value.substring(bucket.length() + 1);
+            }
+            return value;
+        }
+
+        String publicPrefix = publicBaseUrl.endsWith("/") ? publicBaseUrl : publicBaseUrl + "/";
+        if (value.startsWith(publicPrefix)) {
+            return value.substring(publicPrefix.length());
+        }
+
+        return value;
+    }
+
     public record DirectUploadTicket(
             String objectKey,
             String publicUrl,
             String uploadUrl,
             Map<String, String> headers,
+            OffsetDateTime expiresAt
+    ) {
+    }
+
+    public record DirectDownloadTicket(
+            String objectKey,
+            String downloadUrl,
             OffsetDateTime expiresAt
     ) {
     }

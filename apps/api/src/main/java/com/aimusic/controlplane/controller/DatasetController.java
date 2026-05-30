@@ -33,6 +33,11 @@ public class DatasetController {
         return datasetService.list();
     }
 
+    @GetMapping("/{datasetId}")
+    public DatasetResponse get(@PathVariable UUID datasetId) {
+        return datasetService.get(datasetId);
+    }
+
     @PostMapping
     public DatasetResponse create(@Valid @RequestBody CreateDatasetRequest request) {
         return datasetService.create(request);

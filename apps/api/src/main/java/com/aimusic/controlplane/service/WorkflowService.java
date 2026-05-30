@@ -23,17 +23,20 @@ public class WorkflowService {
     private final AssetService assetService;
     private final DatasetService datasetService;
     private final ModelVersionService modelVersionService;
+    private final CosStorageService cosStorageService;
 
     public WorkflowService(
             JobService jobService,
             AssetService assetService,
             DatasetService datasetService,
-            ModelVersionService modelVersionService
+            ModelVersionService modelVersionService,
+            CosStorageService cosStorageService
     ) {
         this.jobService = jobService;
         this.assetService = assetService;
         this.datasetService = datasetService;
         this.modelVersionService = modelVersionService;
+        this.cosStorageService = cosStorageService;
     }
 
     @Transactional
@@ -128,5 +131,9 @@ public class WorkflowService {
                         "inputAssetIds", request.inputAssetIds()
                 )
         ));
+    }
+
+    public CosStorageService.DirectDownloadTicket prepareModelArtifactDownload(String storagePath) {
+        return cosStorageService.prepareDirectDownload(storagePath);
     }
 }

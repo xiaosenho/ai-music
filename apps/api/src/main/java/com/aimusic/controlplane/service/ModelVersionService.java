@@ -42,6 +42,11 @@ public class ModelVersionService {
         return modelVersionRepository.findAllByOrderByCreatedAtDesc().stream().map(this::toResponse).toList();
     }
 
+    @Transactional(readOnly = true)
+    public ModelVersionResponse get(UUID id) {
+        return toResponse(require(id));
+    }
+
     @Transactional
     public ModelVersion createTrainingDraft(UUID datasetId, String name, String modelType, String note) {
         ModelVersion modelVersion = new ModelVersion();
