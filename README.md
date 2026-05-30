@@ -84,3 +84,8 @@ npm run dev
 - Add character / dataset / model domain tables
 - Add worker lease recovery and offline detection scheduler
 - Add Aliyun deployment manifests for backend and static frontend
+
+## Deployment docs
+
+- [Aliyun simple deployment](./docs/aliyun-simple-deployment.md)
+- [Local and Aliyun runbook](./docs/local-and-aliyun-runbook.md)
