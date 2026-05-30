@@ -213,23 +213,34 @@ export function App() {
 
     try {
       setFlash(null);
-      const formData = new FormData();
-      formData.append("file", uploadFile);
-      formData.append("assetType", uploadForm.assetType);
-      if (uploadForm.language.trim()) {
-        formData.append("language", uploadForm.language.trim());
-      }
-      if (uploadForm.note.trim()) {
-        formData.append("note", uploadForm.note.trim());
-      }
-      await api.uploadAsset(formData);
+      const prepared = await api.prepareDirectUpload({
+        fileName: uploadFile.name,
+        assetType: uploadForm.assetType,
+        contentType: uploadFile.type || undefined,
+        sizeBytes: uploadFile.size,
+        language: uploadForm.language.trim() || undefined,
+        note: uploadForm.note.trim() || undefined,
+      });
+      await api.uploadFileToCos(prepared.uploadUrl, uploadFile, prepared.headers);
+      await api.completeDirectUpload({
+        fileName: uploadFile.name,
+        assetType: uploadForm.assetType,
+        objectKey: prepared.objectKey,
+        contentType: uploadFile.type || undefined,
+        sizeBytes: uploadFile.size,
+        language: uploadForm.language.trim() || undefined,
+        note: uploadForm.note.trim() || undefined,
+        metadata: {
+          uploadSource: "web-direct-cos",
+        },
+      });
       setUploadFile(null);
       setUploadForm(DEFAULT_UPLOAD_FORM);
       const fileInput = document.getElementById("asset-file-input") as HTMLInputElement | null;
       if (fileInput) {
         fileInput.value = "";
       }
-      setFlash("素材已上传到 COS 并完成登记。");
+      setFlash("素材已直传 COS，并完成元数据登记。");
       await loadData();
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "素材上传失败");
@@ -416,7 +427,7 @@ export function App() {
         {view === "upload" ? (
           <section className="view-stack">
             <section className="two-column">
-              <Panel title="上传素材" subtitle="文件会直接进入腾讯云 COS 并登记到素材库">
+              <Panel title="上传素材" subtitle="前端直传 COS，后端只保存素材基本信息">
                 <form className="admin-form" onSubmit={handleUploadAsset}>
                   <Field label="选择文件" full>
                     <input

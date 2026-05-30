@@ -4,19 +4,20 @@ import com.qcloud.cos.COSClient;
 import com.qcloud.cos.ClientConfig;
 import com.qcloud.cos.auth.BasicCOSCredentials;
 import com.qcloud.cos.auth.COSCredentials;
+import com.qcloud.cos.http.HttpMethodName;
 import com.qcloud.cos.http.HttpProtocol;
-import com.qcloud.cos.model.PutObjectRequest;
+import com.qcloud.cos.model.GeneratePresignedUrlRequest;
 import com.qcloud.cos.region.Region;
-import java.io.File;
-import java.io.IOException;
-import java.nio.file.Files;
+import java.net.URL;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.Date;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
-import org.springframework.web.multipart.MultipartFile;
 
 @Service
 public class CosStorageService {
@@ -26,46 +27,50 @@ public class CosStorageService {
     private final String secretId;
     private final String secretKey;
     private final String publicBaseUrl;
+    private final long uploadTokenTtlSeconds;
 
     public CosStorageService(
             @Value("${aimusic.cos.region}") String region,
             @Value("${aimusic.cos.bucket}") String bucket,
             @Value("${aimusic.cos.secret-id}") String secretId,
             @Value("${aimusic.cos.secret-key}") String secretKey,
-            @Value("${aimusic.cos.public-base-url}") String publicBaseUrl
+            @Value("${aimusic.cos.public-base-url}") String publicBaseUrl,
+            @Value("${aimusic.cos.upload-token-ttl-seconds}") long uploadTokenTtlSeconds
     ) {
         this.region = region;
         this.bucket = bucket;
         this.secretId = secretId;
         this.secretKey = secretKey;
         this.publicBaseUrl = publicBaseUrl;
+        this.uploadTokenTtlSeconds = uploadTokenTtlSeconds;
     }
 
-    public UploadedObject upload(MultipartFile file, String category) {
-        if (file.isEmpty()) {
-            throw new IllegalArgumentException("Uploaded file is empty");
-        }
-
-        String originalFilename = StringUtils.cleanPath(file.getOriginalFilename() == null ? "asset.bin" : file.getOriginalFilename());
-        String objectKey = buildObjectKey(category, originalFilename);
-        File tempFile = null;
+    public DirectUploadTicket prepareDirectUpload(String fileName, String category) {
+        String safeFileName = StringUtils.cleanPath(fileName == null ? "asset.bin" : fileName);
+        String objectKey = buildObjectKey(category, safeFileName);
+        OffsetDateTime expiresAt = OffsetDateTime.now().plusSeconds(uploadTokenTtlSeconds);
         COSClient client = createClient();
 
         try {
-            tempFile = Files.createTempFile("aimusic-upload-", "-" + originalFilename).toFile();
-            file.transferTo(tempFile);
-            client.putObject(new PutObjectRequest(bucket, objectKey, tempFile));
-            return new UploadedObject(objectKey, publicBaseUrl.endsWith("/")
-                    ? publicBaseUrl + objectKey
-                    : publicBaseUrl + "/" + objectKey);
-        } catch (IOException exception) {
-            throw new IllegalStateException("Failed to upload file to COS", exception);
+            GeneratePresignedUrlRequest request = new GeneratePresignedUrlRequest(bucket, objectKey, HttpMethodName.PUT);
+            request.setExpiration(Date.from(expiresAt.toInstant()));
+            URL uploadUrl = client.generatePresignedUrl(request);
+            return new DirectUploadTicket(
+                    objectKey,
+                    publicUrlFor(objectKey),
+                    uploadUrl.toString(),
+                    Map.of(),
+                    expiresAt
+            );
         } finally {
-            if (tempFile != null && tempFile.exists()) {
-                tempFile.delete();
-            }
             client.shutdown();
         }
+    }
+
+    public String publicUrlFor(String objectKey) {
+        return publicBaseUrl.endsWith("/")
+                ? publicBaseUrl + objectKey
+                : publicBaseUrl + "/" + objectKey;
     }
 
     private COSClient createClient() {
@@ -76,11 +81,16 @@ public class CosStorageService {
     }
 
     private String buildObjectKey(String category, String filename) {
-        String datePath = OffsetDateTime.now().format(DateTimeFormatter.ofPattern("yyyy/MM/dd"));
+        String datePath = OffsetDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ofPattern("yyyy/MM/dd"));
         return category + "/" + datePath + "/" + UUID.randomUUID() + "-" + filename.replaceAll("\\s+", "_");
     }
 
-    public record UploadedObject(String objectKey, String publicUrl) {
+    public record DirectUploadTicket(
+            String objectKey,
+            String publicUrl,
+            String uploadUrl,
+            Map<String, String> headers,
+            OffsetDateTime expiresAt
+    ) {
     }
 }
-

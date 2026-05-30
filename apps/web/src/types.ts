@@ -217,3 +217,34 @@ export interface CreateInferJobPayload {
   executionMode: ExecutionMode;
   note?: string;
 }
+
+export interface PrepareDirectUploadPayload {
+  fileName: string;
+  assetType: AssetType;
+  contentType?: string;
+  sizeBytes?: number;
+  language?: string;
+  note?: string;
+}
+
+export interface PrepareDirectUploadResponse {
+  fileName: string;
+  assetType: AssetType;
+  objectKey: string;
+  publicUrl: string;
+  uploadUrl: string;
+  headers: Record<string, string>;
+  expiresAt: string;
+}
+
+export interface CompleteDirectUploadPayload {
+  fileName: string;
+  assetType: AssetType;
+  objectKey: string;
+  contentType?: string;
+  sizeBytes?: number;
+  durationSeconds?: number;
+  language?: string;
+  note?: string;
+  metadata?: Record<string, unknown>;
+}

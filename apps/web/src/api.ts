@@ -1,4 +1,5 @@
 import type {
+  CompleteDirectUploadPayload,
   CreateDatasetPayload,
   CreateInferJobPayload,
   CreateJobPayload,
@@ -12,6 +13,8 @@ import type {
   JobEvent,
   MediaAsset,
   ModelVersion,
+  PrepareDirectUploadPayload,
+  PrepareDirectUploadResponse,
   WorkerNode,
 } from "./types";
 
@@ -48,10 +51,30 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
-  uploadAsset: (formData: FormData) =>
-    request<MediaAsset>("/api/v1/assets/upload", {
+  prepareDirectUpload: (payload: PrepareDirectUploadPayload) =>
+    request<PrepareDirectUploadResponse>("/api/v1/assets/upload-prepare", {
       method: "POST",
-      body: formData,
+      body: JSON.stringify(payload),
+    }),
+  uploadFileToCos: async (uploadUrl: string, file: File, headers: Record<string, string>) => {
+    const response = await fetch(uploadUrl, {
+      method: "PUT",
+      headers: {
+        ...(file.type ? { "Content-Type": file.type } : {}),
+        ...headers,
+      },
+      body: file,
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || `COS upload failed: ${response.status}`);
+    }
+  },
+  completeDirectUpload: (payload: CompleteDirectUploadPayload) =>
+    request<MediaAsset>("/api/v1/assets/upload-complete", {
+      method: "POST",
+      body: JSON.stringify(payload),
     }),
   createProcessJob: (payload: CreateProcessJobPayload) =>
     request<Job>("/api/v1/assets/process-jobs", {

@@ -1,6 +1,7 @@
 package com.aimusic.controlplane.service;
 
 import com.aimusic.controlplane.dto.CreateMediaAssetRequest;
+import com.aimusic.controlplane.dto.CompleteDirectUploadRequest;
 import com.aimusic.controlplane.dto.MediaAssetResponse;
 import com.aimusic.controlplane.entity.MediaAsset;
 import com.aimusic.controlplane.model.AssetStatus;
@@ -18,10 +19,16 @@ public class AssetService {
 
     private final MediaAssetRepository mediaAssetRepository;
     private final ObjectMapper objectMapper;
+    private final CosStorageService cosStorageService;
 
-    public AssetService(MediaAssetRepository mediaAssetRepository, ObjectMapper objectMapper) {
+    public AssetService(
+            MediaAssetRepository mediaAssetRepository,
+            ObjectMapper objectMapper,
+            CosStorageService cosStorageService
+    ) {
         this.mediaAssetRepository = mediaAssetRepository;
         this.objectMapper = objectMapper;
+        this.cosStorageService = cosStorageService;
     }
 
     @Transactional
@@ -70,6 +77,23 @@ public class AssetService {
     }
 
     @Transactional
+    public MediaAssetResponse completeDirectUpload(CompleteDirectUploadRequest request) {
+        MediaAsset asset = new MediaAsset();
+        asset.setId(UUID.randomUUID());
+        asset.setName(request.fileName());
+        asset.setAssetType(request.assetType());
+        asset.setStatus(AssetStatus.UPLOADED);
+        asset.setObjectKey(request.objectKey());
+        asset.setSourceUri(cosStorageService.publicUrlFor(request.objectKey()));
+        asset.setDurationSeconds(request.durationSeconds());
+        asset.setLanguage(request.language());
+        asset.setNote(request.note());
+        asset.setMetadata(serialize(mergeUploadMetadata(request)));
+        mediaAssetRepository.save(asset);
+        return toResponse(asset);
+    }
+
+    @Transactional
     public void updateStatuses(List<UUID> assetIds, AssetStatus status) {
         List<MediaAsset> assets = mediaAssetRepository.findAllById(assetIds);
         assets.forEach(asset -> asset.setStatus(status));
@@ -108,5 +132,23 @@ public class AssetService {
         } catch (JsonProcessingException exception) {
             throw new IllegalArgumentException("Failed to serialize asset metadata", exception);
         }
+    }
+
+    private Object mergeUploadMetadata(CompleteDirectUploadRequest request) {
+        if (request.metadata() == null && request.contentType() == null && request.sizeBytes() == null) {
+            return null;
+        }
+
+        java.util.Map<String, Object> metadata = new java.util.LinkedHashMap<>();
+        if (request.metadata() != null) {
+            metadata.putAll(request.metadata());
+        }
+        if (request.contentType() != null && !request.contentType().isBlank()) {
+            metadata.put("contentType", request.contentType());
+        }
+        if (request.sizeBytes() != null) {
+            metadata.put("sizeBytes", request.sizeBytes());
+        }
+        return metadata;
     }
 }
