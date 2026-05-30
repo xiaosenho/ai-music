@@ -162,10 +162,7 @@ PY
 
 ```bash
 cd /root/ai-music/apps/autodl-worker
-set -a
-source .env
-set +a
-python3 worker.py
+./scripts/start-worker.sh foreground
 ```
 
 After startup, it should:
@@ -183,27 +180,61 @@ After startup, it should:
 For long-running jobs on AutoDL:
 
 ```bash
-tmux new -s aimusic-worker
 cd /root/ai-music/apps/autodl-worker
-set -a
-source .env
-set +a
-python3 worker.py
+./scripts/start-worker.sh tmux
 ```
 
-Detach:
+View status:
 
 ```bash
-Ctrl+B, then D
+./scripts/status-worker.sh
 ```
 
-Reattach:
+Stop worker:
+
+```bash
+./scripts/stop-worker.sh
+```
+
+If you want to inspect the live tmux session directly:
 
 ```bash
 tmux attach -t aimusic-worker
 ```
 
-## 8. Smoke test flow
+## 8. Install AutoDL autostart
+
+The repo now includes a helper that writes a crontab `@reboot` entry for the worker:
+
+```bash
+cd /root/ai-music/apps/autodl-worker
+./scripts/install-autostart-cron.sh
+```
+
+That entry will run:
+
+```bash
+/usr/bin/env bash /root/ai-music/apps/autodl-worker/scripts/start-worker.sh tmux
+```
+
+Notes:
+
+- make sure `.env` is already configured before installing autostart
+- default mode is `tmux`, so the worker keeps running after boot
+- logs will be written to `apps/autodl-worker/logs/worker.log`
+- if you want the node to pull the latest repo on every boot, add this line to `.env`:
+
+```bash
+AIMUSIC_WORKER_AUTO_GIT_PULL=true
+```
+
+Check current crontab:
+
+```bash
+crontab -l
+```
+
+## 9. Smoke test flow
 
 Recommended test order:
 
@@ -216,13 +247,13 @@ Recommended test order:
 7. Launch one `INFER` job
 8. Confirm output audio appears in COS and backend creates output asset
 
-## 9. Useful logs
+## 10. Useful logs
 
 Worker logs:
 
 ```bash
 cd /root/ai-music/apps/autodl-worker
-tail -f runs/*/progress.json
+tail -f logs/worker.log
 ```
 
 Per-job logs:

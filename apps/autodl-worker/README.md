@@ -21,10 +21,31 @@
 ```bash
 cd apps/autodl-worker
 cp .env.example .env
-set -a
-source .env
-set +a
-python3 worker.py
+./scripts/start-worker.sh foreground
+```
+
+Detached run:
+
+```bash
+./scripts/start-worker.sh tmux
+```
+
+Check status:
+
+```bash
+./scripts/status-worker.sh
+```
+
+Stop worker:
+
+```bash
+./scripts/stop-worker.sh
+```
+
+Install crontab autostart:
+
+```bash
+./scripts/install-autostart-cron.sh
 ```
 
 ## Execution modes
@@ -139,7 +160,7 @@ Recommended setup on AutoDL:
 ```bash
 cd apps/autodl-worker
 cp .env.example .env
-python3 worker.py
+./scripts/start-worker.sh tmux
 ```
 
 Useful env vars:
