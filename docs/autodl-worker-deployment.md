@@ -144,6 +144,20 @@ cd /Retrieval-based-Voice-Conversion-WebUI
 /root/miniconda3/bin/python -m pip install soundfile
 ```
 
+For this project, the repo now includes a one-click installer:
+
+```bash
+cd /root/ai-music/apps/autodl-worker
+bash ./scripts/install-deps.sh
+```
+
+Optional flags:
+
+```bash
+AIMUSIC_INSTALL_TMUX=true bash ./scripts/install-deps.sh
+AIMUSIC_INSTALL_FULL_RVC_DEPS=true bash ./scripts/install-deps.sh
+```
+
 If `faiss` or `fairseq` are missing, install them in the same environment your RVC image uses, not in a different system Python.
 
 Quick check:

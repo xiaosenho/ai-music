@@ -48,6 +48,12 @@ Install crontab autostart:
 ./scripts/install-autostart-cron.sh
 ```
 
+One-click dependency install on AutoDL:
+
+```bash
+bash ./scripts/install-deps.sh
+```
+
 ## Execution modes
 
 ### 1. Mock mode
