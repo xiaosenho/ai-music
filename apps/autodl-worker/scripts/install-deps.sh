@@ -61,8 +61,8 @@ PY
   return 1
 }
 
-echo "[install-deps] upgrading base python tooling"
-"${PYTHON_BIN}" -m pip install -U pip setuptools wheel
+echo "[install-deps] pinning pip to a legacy-compatible version for RVC dependencies"
+"${PYTHON_BIN}" -m pip install -U "pip<24.1" setuptools wheel
 
 ensure_command ffmpeg ffmpeg
 ensure_command ffprobe ffmpeg

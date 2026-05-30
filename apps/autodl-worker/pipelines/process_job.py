@@ -175,18 +175,23 @@ def separate_vocals(input_path: Path, output_dir: Path, config: PipelineConfig) 
     if config.vocal_tool == "demucs":
         demucs_bin = resolve_demucs_command()
         if demucs_bin is None:
+            print("[process] demucs is not available, skipping vocal separation", file=sys.stderr)
             return None
 
-        run_command([
-            *demucs_bin,
-            "--two-stems",
-            "vocals",
-            "-n",
-            config.demucs_model,
-            "--out",
-            str(output_dir),
-            str(input_path),
-        ], "demucs separate")
+        try:
+            run_command([
+                *demucs_bin,
+                "--two-stems",
+                "vocals",
+                "-n",
+                config.demucs_model,
+                "--out",
+                str(output_dir),
+                str(input_path),
+            ], "demucs separate")
+        except RuntimeError as exc:
+            print(f"[process] demucs failed, skipping vocal separation: {exc}", file=sys.stderr)
+            return None
 
         candidates = sorted(output_dir.rglob("vocals.wav"))
         if candidates:
@@ -383,8 +388,9 @@ def resolve_demucs_command() -> Optional[List[str]]:
     ]
     for candidate in candidates:
         try:
-            subprocess.run(candidate + ["--help"], capture_output=True, check=False, text=True)
-            return candidate
+            completed = subprocess.run(candidate + ["--help"], capture_output=True, check=False, text=True)
+            if completed.returncode == 0:
+                return candidate
         except FileNotFoundError:
             continue
     return None
