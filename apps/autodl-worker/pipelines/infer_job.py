@@ -160,6 +160,11 @@ def main() -> int:
     if output_file is None:
         raise RuntimeError(f"No inference output found under {output_dir} matching {config.output_glob}")
 
+    persisted_output = run_dir / output_file.name
+    if persisted_output.resolve() != output_file.resolve():
+        shutil.copy2(output_file, persisted_output)
+    output_file = persisted_output
+
     result_manifest = {
         "localOutputPath": str(output_file),
         "outputName": output_file.name,
@@ -588,9 +593,6 @@ import os
 import sys
 from pathlib import Path
 
-ORIGINAL_ARGS = list(sys.argv[1:])
-sys.argv = [sys.argv[0]]
-
 import numpy as np
 import soundfile as sf
 import torch
@@ -598,24 +600,26 @@ import fairseq
 
 
 def main() -> int:
-    if len(ORIGINAL_ARGS) < 15:
-        raise RuntimeError(f"flat_webui_infer.py expects 15 runtime arguments, got {len(ORIGINAL_ARGS)}")
+    rvc_root = Path(sys.argv[1]).resolve()
+    model_path = Path(sys.argv[2]).resolve()
+    input_path = Path(sys.argv[3]).resolve()
+    output_path = Path(sys.argv[4]).resolve()
+    index_path = sys.argv[5]
+    speaker_id = int(sys.argv[6])
+    f0_up_key = int(sys.argv[7])
+    f0_method = sys.argv[8]
+    index_rate = float(sys.argv[9])
+    filter_radius = int(sys.argv[10])
+    resample_sr = int(sys.argv[11])
+    rms_mix_rate = float(sys.argv[12])
+    protect = float(sys.argv[13])
+    device = sys.argv[14]
+    is_half = sys.argv[15] == "1"
 
-    rvc_root = Path(ORIGINAL_ARGS[0]).resolve()
-    model_path = Path(ORIGINAL_ARGS[1]).resolve()
-    input_path = Path(ORIGINAL_ARGS[2]).resolve()
-    output_path = Path(ORIGINAL_ARGS[3]).resolve()
-    index_path = ORIGINAL_ARGS[4]
-    speaker_id = int(ORIGINAL_ARGS[5])
-    f0_up_key = int(ORIGINAL_ARGS[6])
-    f0_method = ORIGINAL_ARGS[7]
-    index_rate = float(ORIGINAL_ARGS[8])
-    filter_radius = int(ORIGINAL_ARGS[9])
-    resample_sr = int(ORIGINAL_ARGS[10])
-    rms_mix_rate = float(ORIGINAL_ARGS[11])
-    protect = float(ORIGINAL_ARGS[12])
-    device = ORIGINAL_ARGS[13]
-    is_half = ORIGINAL_ARGS[14] == "1"
+    # Some RVC WebUI builds parse sys.argv during module import (for example in Config()).
+    # Clear our positional arguments before importing repo modules so they don't treat
+    # worker runtime values as infer-web startup flags.
+    sys.argv = [sys.argv[0]]
 
     os.chdir(rvc_root)
     sys.path.append(str(rvc_root))
