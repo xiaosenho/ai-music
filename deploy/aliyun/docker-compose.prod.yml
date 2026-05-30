@@ -1,0 +1,31 @@
+services:
+  api:
+    build:
+      context: ../../apps/api
+      dockerfile: Dockerfile
+    container_name: ai-music-api
+    env_file:
+      - ./backend.app.env
+    ports:
+      - "${BACKEND_PORT:-8092}:8092"
+    restart: unless-stopped
+    networks:
+      - life-tool_default
+
+  web:
+    build:
+      context: ../../apps/web
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL}
+    container_name: ai-music-web
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+    restart: unless-stopped
+    networks:
+      - life-tool_default
+
+networks:
+  life-tool_default:
+    external: true
+
