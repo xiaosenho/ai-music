@@ -163,6 +163,7 @@ SPRING_DATA_REDIS_PORT=6379
 - 暴露 `8092:8092`
 - 加入 `life-tool_default`
 - 从 `backend.app.env` 读取环境变量
+- 支持可选 `MAVEN_MIRROR_URL` 构建参数，用来加速 Maven 依赖下载
 
 ## 8.3 启动后端
 
@@ -170,7 +171,18 @@ SPRING_DATA_REDIS_PORT=6379
 cd /srv/ai-music/deploy/aliyun
 cp .env.example .env
 nano .env
-docker compose -f docker-compose.prod.yml up -d --build api
+```
+
+建议确认这一项保留为国内镜像：
+
+```bash
+MAVEN_MIRROR_URL=https://maven.aliyun.com/repository/public
+```
+
+然后使用 BuildKit 构建后端：
+
+```bash
+DOCKER_BUILDKIT=1 docker compose -f docker-compose.prod.yml up -d --build api
 ```
 
 查看状态：
@@ -248,7 +260,7 @@ VITE_API_BASE_URL=http://your-domain.com:8092
 
 ```bash
 cd /srv/ai-music/deploy/aliyun
-docker compose -f docker-compose.prod.yml up -d --build web
+DOCKER_BUILDKIT=1 docker compose -f docker-compose.prod.yml up -d --build web
 ```
 
 查看：
@@ -276,7 +288,7 @@ curl http://127.0.0.1:8080
 
 ```bash
 cd /srv/ai-music/deploy/aliyun
-docker compose -f docker-compose.prod.yml up -d --build
+DOCKER_BUILDKIT=1 docker compose -f docker-compose.prod.yml up -d --build
 ```
 
 ## 11. 文件说明
@@ -347,14 +359,14 @@ git pull
 
 ```bash
 cd /srv/ai-music/deploy/aliyun
-docker compose -f docker-compose.prod.yml up -d --build api
+DOCKER_BUILDKIT=1 docker compose -f docker-compose.prod.yml up -d --build api
 ```
 
 更新前端：
 
 ```bash
 cd /srv/ai-music/deploy/aliyun
-docker compose -f docker-compose.prod.yml up -d --build web
+DOCKER_BUILDKIT=1 docker compose -f docker-compose.prod.yml up -d --build web
 ```
 
 如果前端 API 地址改了，记得重新构建 `web`。
@@ -375,6 +387,13 @@ docker logs -f ai-music-api
 - Redis 主机名是否正确
 - `life-tool_default` 是否存在
 - 后端容器是否真的加入了这个网络
+
+如果是“构建特别慢”，常见原因是：
+
+- 第一次构建需要拉取 Maven 基础镜像和所有依赖
+- 没有开启 `DOCKER_BUILDKIT=1`
+- `.env` 里没有配置 `MAVEN_MIRROR_URL`
+- Docker 构建缓存被清掉了
 
 ### 14.2 后端连不上数据库
 

@@ -40,6 +40,8 @@ services:
     build:
       context: ./apps/api
       dockerfile: Dockerfile
+      args:
+        MAVEN_MIRROR_URL: ${MAVEN_MIRROR_URL:-}
     container_name: ai-music-api
     env_file:
       - .env.docker
@@ -88,4 +90,3 @@ services:
 volumes:
   postgres_data:
   redis_data:
-

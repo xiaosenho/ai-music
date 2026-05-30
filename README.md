@@ -8,6 +8,7 @@ This repository contains the control-plane backend and web console for the AI mu
 - Flyway database migrations
 - PostgreSQL + Redis via Docker Compose
 - AutoDL worker control APIs
+- AutoDL execution worker
 - React + Vite web console
 
 ## Quick start
@@ -19,10 +20,12 @@ This repository contains the control-plane backend and web console for the AI mu
 3. Run:
 
 ```bash
-docker compose --env-file .env.docker up --build
+DOCKER_BUILDKIT=1 docker compose --env-file .env.docker up --build
 ```
 
 The backend listens on `SERVER_PORT`.
+
+If you are deploying in mainland China, keep `MAVEN_MIRROR_URL=https://maven.aliyun.com/repository/public` in `.env.docker` so the backend image builds faster.
 
 ### Backend without Docker
 
@@ -71,6 +74,23 @@ npm run dev
 - `GET /api/v1/jobs/{jobId}/events`
 - `GET /api/v1/dashboard/summary`
 
+## AutoDL worker
+
+The execution-plane worker lives in `apps/autodl-worker/worker.py`.
+
+Quick start:
+
+```bash
+cd apps/autodl-worker
+cp .env.example .env
+set -a
+source .env
+set +a
+python3 worker.py
+```
+
+See `apps/autodl-worker/README.md` for the command contract and real pipeline integration.
+
 ## Notes
 
 - Database schema is managed by `Flyway`
@@ -83,7 +103,7 @@ npm run dev
 - Add authentication and JWT issuance
 - Add character / dataset / model domain tables
 - Add worker lease recovery and offline detection scheduler
-- Add Aliyun deployment manifests for backend and static frontend
+- Add AutoDL worker deployment and watchdog scripts
 
 ## Deployment docs
 

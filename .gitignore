@@ -14,3 +14,7 @@ apps/web/dist/
 apps/web/*.tsbuildinfo
 apps/web/*.js
 apps/web/*.d.ts
+apps/autodl-worker/.state/
+apps/autodl-worker/runs/
+__pycache__/
+*.pyc
