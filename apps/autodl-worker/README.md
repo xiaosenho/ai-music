@@ -49,7 +49,7 @@ You can plug in real scripts for each job type:
 
 ```bash
 AIMUSIC_WORKER_USE_MOCK_EXECUTOR=false
-AIMUSIC_PROCESS_COMMAND='python3 /root/pipelines/process_job.py --context "{context_path}" --run-dir "{run_dir}"'
+AIMUSIC_PROCESS_COMMAND='python3 pipelines/process_job.py --context "{context_path}" --run-dir "{run_dir}"'
 AIMUSIC_TRAIN_COMMAND='bash /root/pipelines/train_rvc.sh "{context_path}" "{run_dir}"'
 AIMUSIC_INFER_COMMAND='python3 /root/pipelines/infer_job.py --context "{context_path}" --run-dir "{run_dir}"'
 ```
@@ -120,6 +120,41 @@ Worker behavior:
 - rewrites the manifest into `processedAssets`
 - backend creates processed asset records from `processedAssets`
 - backend updates dataset `assetIds` to processed asset ids
+
+### Built-in real PROCESS pipeline
+
+The repo now includes a real first-pass pipeline at `pipelines/process_job.py`.
+
+Pipeline steps:
+
+- `ffmpeg`: extract / normalize audio to mono wav
+- `demucs` or custom `uvr`: optional vocal separation
+- `ffmpeg`: high-pass / low-pass / loudness normalize
+- `ffmpeg silencedetect`: speech-oriented silence segmentation
+- `ffmpeg`: export cleaned segments
+- worker: upload segments to COS and report them back as processed assets
+
+Recommended setup on AutoDL:
+
+```bash
+cd apps/autodl-worker
+cp .env.example .env
+sed -i 's/AIMUSIC_WORKER_USE_MOCK_EXECUTOR=true/AIMUSIC_WORKER_USE_MOCK_EXECUTOR=false/' .env
+python3 worker.py
+```
+
+Useful env vars:
+
+- `AIMUSIC_PROCESS_OUTPUT_SAMPLE_RATE=40000`
+- `AIMUSIC_PROCESS_MIN_SEGMENT_SECONDS=2`
+- `AIMUSIC_PROCESS_MAX_SEGMENT_SECONDS=12`
+- `AIMUSIC_PROCESS_VOCAL_TOOL=demucs`
+- `AIMUSIC_PROCESS_ENABLE_DEMUCS=true`
+- `AIMUSIC_PROCESS_DEMUCS_MODEL=htdemucs`
+- `AIMUSIC_PROCESS_UVR_COMMAND=...`
+- `AIMUSIC_PROCESS_AUDIO_FILTERS=highpass=f=80,lowpass=f=12000,loudnorm=I=-16:TP=-1.5:LRA=11`
+
+When `demucs` is unavailable, the script will skip separation and continue with plain `ffmpeg` processing.
 
 ### TRAIN
 
