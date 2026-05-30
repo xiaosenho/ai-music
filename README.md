@@ -109,3 +109,4 @@ See `apps/autodl-worker/README.md` for the command contract and real pipeline in
 
 - [Aliyun simple deployment](./docs/aliyun-simple-deployment.md)
 - [Local and Aliyun runbook](./docs/local-and-aliyun-runbook.md)
+- [AutoDL worker deployment](./docs/autodl-worker-deployment.md)
