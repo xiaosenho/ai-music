@@ -79,6 +79,7 @@ Available placeholders:
 
 - `{job_id}`
 - `{job_type}`
+- `{worker_dir}`
 - `{run_dir}`
 - `{context_path}`
 - `{payload_path}`

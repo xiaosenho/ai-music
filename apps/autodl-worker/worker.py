@@ -40,6 +40,7 @@ def read_int(name: str, default: int) -> int:
 
 @dataclass
 class WorkerConfig:
+    worker_dir: Path = field(default_factory=lambda: Path(__file__).resolve().parent)
     control_plane_base_url: str = field(default_factory=lambda: read_env("AIMUSIC_CONTROL_PLANE_BASE_URL", "http://127.0.0.1:8092"))
     provider: str = field(default_factory=lambda: read_env("AIMUSIC_WORKER_PROVIDER", "autodl"))
     worker_version: str = field(default_factory=lambda: read_env("AIMUSIC_WORKER_VERSION", "autodl-worker-dev"))
@@ -511,6 +512,7 @@ class AutoDlWorker:
         values = SafeDict({
             "job_id": job["id"],
             "job_type": job["jobType"],
+            "worker_dir": str(self.config.worker_dir),
             "run_dir": str(run_dir),
             "context_path": str(run_dir / "context.json"),
             "payload_path": str(run_dir / "payload.json"),
@@ -527,7 +529,7 @@ class AutoDlWorker:
         with stdout_path.open("w", encoding="utf-8") as stdout_file, stderr_path.open("w", encoding="utf-8") as stderr_file:
             process = subprocess.Popen(
                 command,
-                cwd=str(run_dir),
+                cwd=str(self.config.worker_dir),
                 env=self.build_subprocess_env(run_dir),
                 shell=True,
                 stdout=stdout_file,
