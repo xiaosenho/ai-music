@@ -31,6 +31,13 @@ def read_bool(name: str, default: bool) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def read_float(name: str, default: float) -> float:
+    value = os.getenv(name)
+    if value is None or value.strip() == "":
+        return default
+    return float(value)
+
+
 @dataclass
 class TrainConfig:
     workspace_dir_name: str = read_env("AIMUSIC_TRAIN_WORKSPACE_DIR_NAME", "train-workspace")
@@ -87,6 +94,7 @@ def main() -> int:
     config = TrainConfig()
 
     job = context.get("job", {})
+    payload = context.get("payload") or {}
     resources = context.get("resources", {})
     dataset = resources.get("dataset") or {}
     assets = resources.get("assets") or []
@@ -111,6 +119,13 @@ def main() -> int:
         "f0Method": normalize_f0_method(job.get("f0Method") or "rmvpe"),
         "batchSize": job.get("batchSize") or 8,
         "totalEpoch": job.get("totalEpoch") or 300,
+        "speakerId": parse_int(job.get("speakerId"), config.rvc_speaker_id),
+        "version": parse_string(payload.get("version"), config.rvc_version),
+        "useF0": parse_bool_value(payload.get("useF0"), config.rvc_use_f0),
+        "saveEveryEpoch": parse_int(payload.get("saveEveryEpoch"), config.rvc_save_every_epoch),
+        "saveLatest": parse_bool_value(payload.get("saveLatest"), config.rvc_save_latest),
+        "cacheGpu": parse_bool_value(payload.get("cacheGpu"), config.rvc_cache_gpu),
+        "saveEveryWeights": parse_bool_value(payload.get("saveEveryWeights"), config.rvc_save_every_weights),
         "modelName": job.get("modelVersion") or dataset.get("name") or "rvc-model",
         "datasetId": dataset.get("id"),
         "datasetName": dataset.get("name"),
@@ -146,6 +161,13 @@ def main() -> int:
             "f0Method": train_parameters["f0Method"],
             "batchSize": train_parameters["batchSize"],
             "totalEpoch": train_parameters["totalEpoch"],
+            "speakerId": train_parameters["speakerId"],
+            "version": train_parameters["version"],
+            "useF0": train_parameters["useF0"],
+            "saveEveryEpoch": train_parameters["saveEveryEpoch"],
+            "saveLatest": train_parameters["saveLatest"],
+            "cacheGpu": train_parameters["cacheGpu"],
+            "saveEveryWeights": train_parameters["saveEveryWeights"],
             "assetCount": len(staged_files),
         }
     else:
@@ -200,7 +222,7 @@ def run_webui_auto_training(
     if not rvc_root.exists():
         raise RuntimeError(f"RVC root directory does not exist: {rvc_root}")
 
-    effective_version = resolve_rvc_version(config.rvc_version, rvc_root)
+    effective_version = resolve_rvc_version(str(train_parameters["version"]), rvc_root)
     layout = detect_webui_layout(rvc_root)
     scripts = resolve_webui_scripts(rvc_root, layout)
     exp_name = build_experiment_name(str(train_parameters["modelName"]), train_parameters.get("datasetId"))
@@ -216,7 +238,7 @@ def run_webui_auto_training(
     sample_rate_tag = str(train_parameters["sampleRateTag"])
     total_epoch = int(train_parameters["totalEpoch"])
     batch_size = int(train_parameters["batchSize"])
-    use_f0 = config.rvc_use_f0
+    use_f0 = bool(train_parameters["useF0"])
 
     if layout == "flat":
         run_flat_webui_auto_training(
@@ -250,7 +272,7 @@ def run_webui_auto_training(
         log_dir=log_dir,
         sample_rate_tag=sample_rate_tag,
         version=effective_version,
-        speaker_id=config.rvc_speaker_id,
+        speaker_id=int(train_parameters["speakerId"]),
         use_f0=use_f0,
     )
     if file_count == 0:
@@ -280,13 +302,13 @@ def run_webui_auto_training(
         "-te",
         str(total_epoch),
         "-se",
-        str(config.rvc_save_every_epoch),
+        str(train_parameters["saveEveryEpoch"]),
         "-l",
-        "1" if config.rvc_save_latest else "0",
+        "1" if train_parameters["saveLatest"] else "0",
         "-c",
-        "1" if config.rvc_cache_gpu else "0",
+        "1" if train_parameters["cacheGpu"] else "0",
         "-sw",
-        "1" if config.rvc_save_every_weights else "0",
+        "1" if train_parameters["saveEveryWeights"] else "0",
         "-v",
         effective_version,
     ]
@@ -364,10 +386,16 @@ def run_webui_auto_training(
             "f0Method": train_parameters["f0Method"],
             "batchSize": batch_size,
             "totalEpoch": total_epoch,
+            "speakerId": train_parameters["speakerId"],
+            "requestedVersion": train_parameters["version"],
             "assetCount": int(train_parameters["assetCount"]),
             "layout": layout,
-            "requestedVersion": config.rvc_version,
             "effectiveVersion": effective_version,
+            "useF0": use_f0,
+            "saveEveryEpoch": train_parameters["saveEveryEpoch"],
+            "saveLatest": train_parameters["saveLatest"],
+            "cacheGpu": train_parameters["cacheGpu"],
+            "saveEveryWeights": train_parameters["saveEveryWeights"],
             "experimentName": exp_name,
             "fileCount": file_count,
             "indexBuilt": copied_index is not None,
@@ -424,6 +452,13 @@ def build_train_command(
         "f0_method": train_parameters["f0Method"],
         "batch_size": train_parameters["batchSize"],
         "total_epoch": train_parameters["totalEpoch"],
+        "speaker_id": train_parameters.get("speakerId") or "",
+        "version": train_parameters.get("version") or "",
+        "use_f0": "1" if train_parameters.get("useF0") else "0",
+        "save_every_epoch": train_parameters.get("saveEveryEpoch") or "",
+        "save_latest": "1" if train_parameters.get("saveLatest") else "0",
+        "cache_gpu": "1" if train_parameters.get("cacheGpu") else "0",
+        "save_every_weights": "1" if train_parameters.get("saveEveryWeights") else "0",
         "model_name": train_parameters["modelName"],
         "dataset_id": train_parameters.get("datasetId") or "",
         "dataset_name": train_parameters.get("datasetName") or "",
@@ -972,6 +1007,38 @@ def normalize_f0_method(method: str) -> str:
     if normalized == "rmvpe_gpu":
         return "rmvpe"
     return normalized
+
+
+def parse_bool_value(raw: object, default: bool) -> bool:
+    if raw is None:
+        return default
+    if isinstance(raw, bool):
+        return raw
+    if isinstance(raw, (int, float)):
+        return bool(raw)
+    if isinstance(raw, str):
+        normalized = raw.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+    return default
+
+
+def parse_int(raw: object, default: int) -> int:
+    if raw is None or raw == "":
+        return default
+    try:
+        return int(raw)
+    except Exception:
+        return default
+
+
+def parse_string(raw: object, default: str) -> str:
+    if raw is None:
+        return default
+    value = str(raw).strip()
+    return value or default
 
 
 def bool_text(value: bool) -> str:

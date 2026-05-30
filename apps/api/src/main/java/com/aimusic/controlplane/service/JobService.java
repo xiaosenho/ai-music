@@ -85,7 +85,10 @@ public class JobService {
     @Transactional
     public PullJobResponse pullJob(PullJobRequest request) {
         WorkerNode workerNode = workerService.getRequiredNode(request.nodeId());
-        if (workerNode.getStatus() == NodeStatus.BUSY || workerNode.getStatus() == NodeStatus.DRAINING) {
+        NodeStatus effectiveStatus = workerService.resolveEffectiveStatus(workerNode);
+        if (effectiveStatus == NodeStatus.OFFLINE
+                || effectiveStatus == NodeStatus.BUSY
+                || effectiveStatus == NodeStatus.DRAINING) {
             return new PullJobResponse(false, null);
         }
 

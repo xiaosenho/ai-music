@@ -31,7 +31,7 @@ python3 worker.py
 
 ### 1. Mock mode
 
-Default mode is mock execution:
+Mock mode is optional and should only be used for control-plane smoke testing:
 
 ```bash
 AIMUSIC_WORKER_USE_MOCK_EXECUTOR=true
@@ -139,7 +139,6 @@ Recommended setup on AutoDL:
 ```bash
 cd apps/autodl-worker
 cp .env.example .env
-sed -i 's/AIMUSIC_WORKER_USE_MOCK_EXECUTOR=true/AIMUSIC_WORKER_USE_MOCK_EXECUTOR=false/' .env
 python3 worker.py
 ```
 

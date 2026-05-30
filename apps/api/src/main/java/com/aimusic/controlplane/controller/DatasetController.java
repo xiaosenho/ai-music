@@ -9,6 +9,7 @@ import com.aimusic.controlplane.service.WorkflowService;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -36,6 +37,11 @@ public class DatasetController {
     @GetMapping("/{datasetId}")
     public DatasetResponse get(@PathVariable UUID datasetId) {
         return datasetService.get(datasetId);
+    }
+
+    @DeleteMapping("/{datasetId}")
+    public void delete(@PathVariable UUID datasetId) {
+        datasetService.delete(datasetId);
     }
 
     @PostMapping

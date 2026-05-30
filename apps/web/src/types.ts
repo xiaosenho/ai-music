@@ -209,12 +209,27 @@ export interface CreateTrainJobPayload {
   f0Method?: string;
   batchSize?: number;
   totalEpoch?: number;
+  speakerId?: string;
+  version?: "v1" | "v2";
+  useF0?: boolean;
+  saveEveryEpoch?: number;
+  saveLatest?: boolean;
+  cacheGpu?: boolean;
+  saveEveryWeights?: boolean;
   note?: string;
 }
 
 export interface CreateInferJobPayload {
   inputAssetIds: string[];
   executionMode: ExecutionMode;
+  speakerId?: string;
+  f0Method?: string;
+  f0UpKey?: number;
+  indexRate?: number;
+  filterRadius?: number;
+  resampleSr?: number;
+  rmsMixRate?: number;
+  protect?: number;
   note?: string;
 }
 
@@ -234,6 +249,12 @@ export interface PrepareDirectUploadResponse {
   publicUrl: string;
   uploadUrl: string;
   headers: Record<string, string>;
+  expiresAt: string;
+}
+
+export interface DirectDownloadTicket {
+  objectKey: string;
+  downloadUrl: string;
   expiresAt: string;
 }
 

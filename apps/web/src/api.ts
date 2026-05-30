@@ -9,6 +9,7 @@ import type {
   CreateTrainJobPayload,
   DashboardSummary,
   Dataset,
+  DirectDownloadTicket,
   Job,
   JobEvent,
   MediaAsset,
@@ -46,6 +47,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   getSummary: () => request<DashboardSummary>("/api/v1/dashboard/summary"),
   getAssets: () => request<MediaAsset[]>("/api/v1/assets"),
+  deleteAsset: (assetId: string) =>
+    request<void>(`/api/v1/assets/${assetId}`, {
+      method: "DELETE",
+    }),
   createAsset: (payload: CreateMediaAssetPayload) =>
     request<MediaAsset>("/api/v1/assets", {
       method: "POST",
@@ -82,6 +87,10 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   getDatasets: () => request<Dataset[]>("/api/v1/datasets"),
+  deleteDataset: (datasetId: string) =>
+    request<void>(`/api/v1/datasets/${datasetId}`, {
+      method: "DELETE",
+    }),
   createDataset: (payload: CreateDatasetPayload) =>
     request<Dataset>("/api/v1/datasets", {
       method: "POST",
@@ -93,6 +102,14 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   getModels: () => request<ModelVersion[]>("/api/v1/models"),
+  deleteModel: (modelVersionId: string) =>
+    request<void>(`/api/v1/models/${modelVersionId}`, {
+      method: "DELETE",
+    }),
+  prepareModelDownload: (modelVersionId: string) =>
+    request<DirectDownloadTicket>(`/api/v1/models/${modelVersionId}/download-ticket`, {
+      method: "POST",
+    }),
   createModelVersion: (payload: CreateModelVersionPayload) =>
     request<ModelVersion>("/api/v1/models", {
       method: "POST",

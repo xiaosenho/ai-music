@@ -30,6 +30,13 @@ def read_float(name: str, default: float) -> float:
     return float(value)
 
 
+def read_int(name: str, default: int) -> int:
+    value = os.getenv(name)
+    if value is None or value.strip() == "":
+        return default
+    return int(value)
+
+
 @dataclass
 class InferConfig:
     workspace_dir_name: str = read_env("AIMUSIC_INFER_WORKSPACE_DIR_NAME", "infer-workspace")
@@ -64,6 +71,7 @@ def main() -> int:
     run_dir = Path(args.run_dir).resolve()
     config = InferConfig()
 
+    payload = context.get("payload") or {}
     resources = context.get("resources", {})
     model = resources.get("model") or {}
     assets = resources.get("assets") or []
@@ -101,8 +109,14 @@ def main() -> int:
         "inputCount": len(staged_inputs),
         "executionMode": job.get("executionMode"),
         "sampleRate": job.get("sampleRate"),
-        "speakerId": job.get("speakerId") or 0,
+        "speakerId": parse_string(job.get("speakerId"), "0"),
         "f0Method": normalize_f0_method(job.get("f0Method") or "rmvpe"),
+        "f0UpKey": parse_int(payload.get("f0UpKey"), config.rvc_f0_up_key),
+        "indexRate": parse_float_value(payload.get("indexRate"), config.rvc_index_rate),
+        "filterRadius": parse_int(payload.get("filterRadius"), config.rvc_filter_radius),
+        "resampleSr": parse_int(payload.get("resampleSr"), config.rvc_resample_sr),
+        "rmsMixRate": parse_float_value(payload.get("rmsMixRate"), config.rvc_rms_mix_rate),
+        "protect": parse_float_value(payload.get("protect"), config.rvc_protect),
     }
     write_json(manifests_dir / "infer_config.json", {
         "model": model,
@@ -154,7 +168,14 @@ def main() -> int:
             "inputCount": len(staged_inputs),
             "primaryInputName": primary_input["name"],
             "modelName": model.get("name"),
+            "speakerId": infer_parameters["speakerId"],
             "f0Method": infer_parameters["f0Method"],
+            "f0UpKey": infer_parameters["f0UpKey"],
+            "indexRate": infer_parameters["indexRate"],
+            "filterRadius": infer_parameters["filterRadius"],
+            "resampleSr": infer_parameters["resampleSr"],
+            "rmsMixRate": infer_parameters["rmsMixRate"],
+            "protect": infer_parameters["protect"],
         },
     }
     write_json(run_dir / "result_manifest.json", result_manifest)
@@ -193,7 +214,7 @@ def execute_webui_auto_infer(
                 config.rvc_python_bin,
                 str(infer_cli),
                 "--f0up_key",
-                str(config.rvc_f0_up_key),
+                str(parameters["f0UpKey"]),
                 "--input_path",
                 str(primary_input["stagedPath"]),
                 "--index_path",
@@ -205,17 +226,17 @@ def execute_webui_auto_infer(
                 "--model_name",
                 staged_model_name,
                 "--index_rate",
-                str(config.rvc_index_rate),
+                str(parameters["indexRate"]),
                 "--device",
                 config.rvc_device,
                 "--filter_radius",
-                str(config.rvc_filter_radius),
+                str(parameters["filterRadius"]),
                 "--resample_sr",
-                str(config.rvc_resample_sr),
+                str(parameters["resampleSr"]),
                 "--rms_mix_rate",
-                str(config.rvc_rms_mix_rate),
+                str(parameters["rmsMixRate"]),
                 "--protect",
-                str(config.rvc_protect),
+                str(parameters["protect"]),
             ]
             run_logged_command(
                 name="infer-cli",
@@ -239,13 +260,13 @@ def execute_webui_auto_infer(
             str(expected_output_path),
             resolved_model.get("indexPath", ""),
             str(parameters.get("speakerId") or 0),
-            str(config.rvc_f0_up_key),
+            str(parameters["f0UpKey"]),
             str(parameters["f0Method"]),
-            str(config.rvc_index_rate),
-            str(config.rvc_filter_radius),
-            str(config.rvc_resample_sr),
-            str(config.rvc_rms_mix_rate),
-            str(config.rvc_protect),
+            str(parameters["indexRate"]),
+            str(parameters["filterRadius"]),
+            str(parameters["resampleSr"]),
+            str(parameters["rmsMixRate"]),
+            str(parameters["protect"]),
             config.rvc_device,
             "1" if config.rvc_is_half else "0",
         ]
@@ -356,6 +377,12 @@ def build_infer_command(
         "f0_method": parameters.get("f0Method") or "",
         "sample_rate": parameters.get("sampleRate") or "",
         "model_name": parameters.get("modelName") or "",
+        "f0_up_key": parameters.get("f0UpKey") or "",
+        "index_rate": parameters.get("indexRate") or "",
+        "filter_radius": parameters.get("filterRadius") or "",
+        "resample_sr": parameters.get("resampleSr") or "",
+        "rms_mix_rate": parameters.get("rmsMixRate") or "",
+        "protect": parameters.get("protect") or "",
     })
     return template.format_map(values)
 
@@ -448,6 +475,31 @@ def normalize_f0_method(method: str) -> str:
     if normalized == "rmvpe_gpu":
         return "rmvpe"
     return normalized
+
+
+def parse_int(raw: object, default: int) -> int:
+    if raw is None or raw == "":
+        return default
+    try:
+        return int(raw)
+    except Exception:
+        return default
+
+
+def parse_float_value(raw: object, default: float) -> float:
+    if raw is None or raw == "":
+        return default
+    try:
+        return float(raw)
+    except Exception:
+        return default
+
+
+def parse_string(raw: object, default: str) -> str:
+    if raw is None:
+        return default
+    value = str(raw).strip()
+    return value or default
 
 
 def pick_latest(directory: Path, pattern: str) -> Optional[Path]:

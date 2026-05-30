@@ -93,6 +93,13 @@ const DEFAULT_TRAIN_FORM: TrainFormState = {
   f0Method: "rmvpe",
   batchSize: 8,
   totalEpoch: 300,
+  speakerId: "0",
+  version: "v2",
+  useF0: true,
+  saveEveryEpoch: 10,
+  saveLatest: true,
+  cacheGpu: false,
+  saveEveryWeights: false,
   note: "",
 };
 
@@ -100,6 +107,14 @@ const DEFAULT_INFER_FORM: InferFormState = {
   modelVersionId: "",
   inputAssetIds: [],
   executionMode: "CLOUD",
+  speakerId: "0",
+  f0Method: "rmvpe",
+  f0UpKey: 0,
+  indexRate: 0.66,
+  filterRadius: 3,
+  resampleSr: 0,
+  rmsMixRate: 1,
+  protect: 0.33,
   note: "",
 };
 
@@ -294,6 +309,13 @@ export function App() {
         f0Method: trainForm.f0Method?.trim() || undefined,
         batchSize: trainForm.batchSize,
         totalEpoch: trainForm.totalEpoch,
+        speakerId: trainForm.speakerId?.trim() || undefined,
+        version: trainForm.version,
+        useF0: trainForm.useF0,
+        saveEveryEpoch: trainForm.saveEveryEpoch,
+        saveLatest: trainForm.saveLatest,
+        cacheGpu: trainForm.cacheGpu,
+        saveEveryWeights: trainForm.saveEveryWeights,
         note: trainForm.note?.trim() || undefined,
       });
       setTrainForm(DEFAULT_TRAIN_FORM);
@@ -320,6 +342,14 @@ export function App() {
       await api.createInferJob(inferForm.modelVersionId, {
         inputAssetIds: inferForm.inputAssetIds,
         executionMode: inferForm.executionMode,
+        speakerId: inferForm.speakerId?.trim() || undefined,
+        f0Method: inferForm.f0Method?.trim() || undefined,
+        f0UpKey: inferForm.f0UpKey,
+        indexRate: inferForm.indexRate,
+        filterRadius: inferForm.filterRadius,
+        resampleSr: inferForm.resampleSr,
+        rmsMixRate: inferForm.rmsMixRate,
+        protect: inferForm.protect,
         note: inferForm.note?.trim() || undefined,
       });
       setInferForm((current) => ({
@@ -330,6 +360,59 @@ export function App() {
       await loadData();
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "推理任务创建失败");
+    }
+  }
+
+  async function handleDeleteAsset(assetId: string) {
+    if (!window.confirm("确定删除这个素材记录吗？")) {
+      return;
+    }
+    try {
+      setFlash(null);
+      await api.deleteAsset(assetId);
+      setFlash("素材记录已删除。");
+      await loadData();
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "素材删除失败");
+    }
+  }
+
+  async function handleDeleteDataset(datasetId: string) {
+    if (!window.confirm("确定删除这个数据集吗？")) {
+      return;
+    }
+    try {
+      setFlash(null);
+      await api.deleteDataset(datasetId);
+      setFlash("数据集已删除。");
+      await loadData();
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "数据集删除失败");
+    }
+  }
+
+  async function handleDeleteModel(modelVersionId: string) {
+    if (!window.confirm("确定删除这个模型版本吗？")) {
+      return;
+    }
+    try {
+      setFlash(null);
+      await api.deleteModel(modelVersionId);
+      setFlash("模型版本已删除。");
+      await loadData();
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "模型删除失败");
+    }
+  }
+
+  async function handleDownloadModel(modelVersionId: string) {
+    try {
+      setFlash(null);
+      const ticket = await api.prepareModelDownload(modelVersionId);
+      window.open(ticket.downloadUrl, "_blank", "noopener,noreferrer");
+      setFlash("已生成模型下载链接。");
+    } catch (downloadError) {
+      setError(downloadError instanceof Error ? downloadError.message : "模型下载链接生成失败");
     }
   }
 
@@ -478,7 +561,7 @@ export function App() {
             </section>
 
             <Panel title="素材列表" subtitle="上传成功后会出现在这里">
-              <AssetTable assets={assets} />
+              <AssetTable assets={assets} onDelete={handleDeleteAsset} />
             </Panel>
           </section>
         ) : null}
@@ -530,7 +613,7 @@ export function App() {
             </section>
 
             <Panel title="数据集列表" subtitle="处理完成的数据集会沉淀到这里">
-              <DatasetTable datasets={datasets} />
+              <DatasetTable datasets={datasets} onDelete={handleDeleteDataset} />
             </Panel>
           </section>
         ) : null}
@@ -566,32 +649,90 @@ export function App() {
                       onChange={(event) => updateTrainForm("modelType", event.target.value)}
                     />
                   </Field>
-                  <Field label="采样率">
+                  <Field label="采样率" helper="决定模型目标音频质量与资源消耗。RVC v2 常用 40k，唱歌或高频细节更多时可以考虑 48k。">
                     <input
                       type="number"
                       value={trainForm.sampleRate ?? 40000}
                       onChange={(event) => updateTrainForm("sampleRate", Number(event.target.value))}
                     />
                   </Field>
-                  <Field label="F0 方法">
+                  <Field label="F0 方法" helper="音高提取算法。`rmvpe` 通常是当前最稳的默认值，唱歌和较复杂语音都更适合。">
                     <input
                       value={trainForm.f0Method ?? ""}
                       onChange={(event) => updateTrainForm("f0Method", event.target.value)}
                     />
                   </Field>
-                  <Field label="Batch Size">
+                  <Field label="模型版本" helper="你当前这套 WebUI V4 工作流下，实际训练版本仍然是 v1 或 v2，常规推荐使用 v2。">
+                    <select
+                      value={trainForm.version ?? "v2"}
+                      onChange={(event) => updateTrainForm("version", event.target.value as "v1" | "v2")}
+                    >
+                      <option value="v1">v1</option>
+                      <option value="v2">v2</option>
+                    </select>
+                  </Field>
+                  <Field label="启用 F0" helper="唱歌和需要强音高约束的角色建议开启；普通口播也通常建议开启，除非你明确要训练无 F0 模型。">
+                    <select
+                      value={trainForm.useF0 ? "true" : "false"}
+                      onChange={(event) => updateTrainForm("useF0", event.target.value === "true")}
+                    >
+                      <option value="true">是</option>
+                      <option value="false">否</option>
+                    </select>
+                  </Field>
+                  <Field label="Batch Size" helper="每张显卡单次喂入的样本数量。越大通常越快，但更吃显存，爆显存时先降这个值。">
                     <input
                       type="number"
                       value={trainForm.batchSize ?? 8}
                       onChange={(event) => updateTrainForm("batchSize", Number(event.target.value))}
                     />
                   </Field>
-                  <Field label="Epoch">
+                  <Field label="Epoch" helper="总训练轮数。轮数越高越可能拟合角色音色，但过高也可能带来过拟合和训练时间增加。">
                     <input
                       type="number"
                       value={trainForm.totalEpoch ?? 300}
                       onChange={(event) => updateTrainForm("totalEpoch", Number(event.target.value))}
                     />
+                  </Field>
+                  <Field label="说话人 ID" helper="多说话人训练时用于指定角色编号。当前单角色训练一般保持 0 即可。">
+                    <input
+                      value={trainForm.speakerId ?? "0"}
+                      onChange={(event) => updateTrainForm("speakerId", event.target.value)}
+                    />
+                  </Field>
+                  <Field label="保存间隔" helper="每训练多少个 epoch 保存一次检查点。值越小越方便中途观察，但会增加磁盘写入。">
+                    <input
+                      type="number"
+                      value={trainForm.saveEveryEpoch ?? 10}
+                      onChange={(event) => updateTrainForm("saveEveryEpoch", Number(event.target.value))}
+                    />
+                  </Field>
+                  <Field label="仅保留最新 ckpt" helper="开启后节省磁盘空间，适合正式跑长任务；关闭后更方便回看中间训练阶段。">
+                    <select
+                      value={trainForm.saveLatest ? "true" : "false"}
+                      onChange={(event) => updateTrainForm("saveLatest", event.target.value === "true")}
+                    >
+                      <option value="true">是</option>
+                      <option value="false">否</option>
+                    </select>
+                  </Field>
+                  <Field label="缓存训练集到显存" helper="小数据集能提速，但非常吃显存。显存紧张时建议关闭。">
+                    <select
+                      value={trainForm.cacheGpu ? "true" : "false"}
+                      onChange={(event) => updateTrainForm("cacheGpu", event.target.value === "true")}
+                    >
+                      <option value="false">否</option>
+                      <option value="true">是</option>
+                    </select>
+                  </Field>
+                  <Field label="每次保存都导出小模型" helper="开启后每个保存点都会产出可直接用的小模型，方便中途试听，但会占更多空间。">
+                    <select
+                      value={trainForm.saveEveryWeights ? "true" : "false"}
+                      onChange={(event) => updateTrainForm("saveEveryWeights", event.target.value === "true")}
+                    >
+                      <option value="false">否</option>
+                      <option value="true">是</option>
+                    </select>
                   </Field>
                   <Field label="备注" full>
                     <textarea
@@ -610,7 +751,7 @@ export function App() {
             </section>
 
             <Panel title="模型版本列表" subtitle="训练完成后自动沉淀到模型库">
-              <ModelTable models={models} />
+              <ModelTable models={models} onDownload={handleDownloadModel} onDelete={handleDeleteModel} />
             </Panel>
           </section>
         ) : null}
@@ -633,7 +774,7 @@ export function App() {
                       ))}
                     </select>
                   </Field>
-                  <Field label="执行模式">
+                  <Field label="执行模式" helper="当前一般选择 CLOUD 交给 AutoDL。LOCAL 是给未来客户端本地推理预留的入口。">
                     <select
                       value={inferForm.executionMode}
                       onChange={(event) => updateInferForm("executionMode", event.target.value as ExecutionMode)}
@@ -643,7 +784,7 @@ export function App() {
                       <option value="AUTO">AUTO</option>
                     </select>
                   </Field>
-                  <Field label="输入素材" full>
+                  <Field label="输入素材" helper="选择要做声线转换的原始音频。当前会以第一条输入素材作为主输出目标。" full>
                     <SelectionGrid
                       items={assets.map((asset) => ({
                         id: asset.id,
@@ -652,6 +793,69 @@ export function App() {
                       }))}
                       selectedIds={inferForm.inputAssetIds}
                       onChange={(inputAssetIds) => updateInferForm("inputAssetIds", inputAssetIds)}
+                    />
+                  </Field>
+                  <Field label="说话人 ID" helper="多说话人模型时用于切换目标说话人。单角色模型通常保持 0 即可。">
+                    <input
+                      value={inferForm.speakerId ?? "0"}
+                      onChange={(event) => updateInferForm("speakerId", event.target.value)}
+                    />
+                  </Field>
+                  <Field label="F0 方法" helper="推理时的音高提取算法。通常推荐 `rmvpe`，如果你有特别需求再尝试其它方法。">
+                    <input
+                      value={inferForm.f0Method ?? "rmvpe"}
+                      onChange={(event) => updateInferForm("f0Method", event.target.value)}
+                    />
+                  </Field>
+                  <Field label="变调（f0_up_key）" helper="以半音为单位升降调，男转女常见 +12，女转男常见 -12，普通同音域配音一般保持 0。">
+                    <input
+                      type="number"
+                      value={inferForm.f0UpKey ?? 0}
+                      onChange={(event) => updateInferForm("f0UpKey", Number(event.target.value))}
+                    />
+                  </Field>
+                  <Field label="索引占比" helper="越高越依赖检索库来贴近目标音色，通常 0.5 到 0.8 比较稳，太高可能带来奇怪口型感。">
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max="1"
+                      value={inferForm.indexRate ?? 0.66}
+                      onChange={(event) => updateInferForm("indexRate", Number(event.target.value))}
+                    />
+                  </Field>
+                  <Field label="滤波半径" helper="主要影响 harvest 一类音高结果的平滑度。常见默认值是 3，越大越平滑。">
+                    <input
+                      type="number"
+                      value={inferForm.filterRadius ?? 3}
+                      onChange={(event) => updateInferForm("filterRadius", Number(event.target.value))}
+                    />
+                  </Field>
+                  <Field label="重采样输出" helper="设为 0 表示保持模型默认采样率；设为 16000 以上则会在输出阶段重采样到指定值。">
+                    <input
+                      type="number"
+                      value={inferForm.resampleSr ?? 0}
+                      onChange={(event) => updateInferForm("resampleSr", Number(event.target.value))}
+                    />
+                  </Field>
+                  <Field label="包络混合比" helper="控制输出音量包络与原始包络的融合程度。越接近 1 越偏向模型输出包络。">
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max="1"
+                      value={inferForm.rmsMixRate ?? 1}
+                      onChange={(event) => updateInferForm("rmsMixRate", Number(event.target.value))}
+                    />
+                  </Field>
+                  <Field label="Protect" helper="保护清辅音、呼吸声和边缘细节。越低保护越强，但过低可能削弱索引效果，常用 0.33。">
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max="0.5"
+                      value={inferForm.protect ?? 0.33}
+                      onChange={(event) => updateInferForm("protect", Number(event.target.value))}
                     />
                   </Field>
                   <Field label="备注" full>
@@ -699,7 +903,7 @@ export function App() {
                 <JobTable jobs={inferJobs} onSelect={setSelectedJobId} selectedJobId={selectedJobId} />
               </Panel>
               <Panel title="推理输出" subtitle="Worker 上报成功后自动登记回素材库">
-                <AssetTable assets={outputAssets} compact />
+                <AssetTable assets={outputAssets} compact onDelete={handleDeleteAsset} />
               </Panel>
             </section>
           </section>
@@ -747,16 +951,19 @@ function Panel({
 function Field({
   label,
   children,
+  helper,
   full = false,
 }: {
   label: string;
   children: React.ReactNode;
+  helper?: string;
   full?: boolean;
 }) {
   return (
     <label className={`field ${full ? "field-full" : ""}`}>
       <span>{label}</span>
       {children}
+      {helper ? <small className="field-help">{helper}</small> : null}
     </label>
   );
 }
@@ -837,7 +1044,15 @@ function SelectionGrid({
   );
 }
 
-function AssetTable({ assets, compact = false }: { assets: MediaAsset[]; compact?: boolean }) {
+function AssetTable({
+  assets,
+  compact = false,
+  onDelete,
+}: {
+  assets: MediaAsset[];
+  compact?: boolean;
+  onDelete: (assetId: string) => void;
+}) {
   return (
     <div className="table-shell">
       <table className={`admin-table ${compact ? "compact-table" : ""}`}>
@@ -849,6 +1064,7 @@ function AssetTable({ assets, compact = false }: { assets: MediaAsset[]; compact
             <th>来源</th>
             <th>时长</th>
             <th>时间</th>
+            <th>操作</th>
           </tr>
         </thead>
         <tbody>
@@ -857,9 +1073,14 @@ function AssetTable({ assets, compact = false }: { assets: MediaAsset[]; compact
               <td>{asset.name}</td>
               <td>{asset.assetType}</td>
               <td><span className={`pill status-${asset.status.toLowerCase()}`}>{asset.status}</span></td>
-              <td className="truncate">{asset.sourceUri || asset.objectKey || "-"}</td>
+              <td className="truncate">{renderSourceValue(asset.sourceUri || asset.objectKey || null)}</td>
               <td>{asset.durationSeconds ?? "-"}</td>
               <td>{formatDate(asset.createdAt)}</td>
+              <td>
+                <div className="inline-actions">
+                  <button type="button" onClick={() => onDelete(asset.id)}>删除</button>
+                </div>
+              </td>
             </tr>
           ))}
         </tbody>
@@ -869,7 +1090,13 @@ function AssetTable({ assets, compact = false }: { assets: MediaAsset[]; compact
   );
 }
 
-function DatasetTable({ datasets }: { datasets: Dataset[] }) {
+function DatasetTable({
+  datasets,
+  onDelete,
+}: {
+  datasets: Dataset[];
+  onDelete: (datasetId: string) => void;
+}) {
   return (
     <div className="table-shell">
       <table className="admin-table">
@@ -881,6 +1108,7 @@ function DatasetTable({ datasets }: { datasets: Dataset[] }) {
             <th>片段数</th>
             <th>语言</th>
             <th>时间</th>
+            <th>操作</th>
           </tr>
         </thead>
         <tbody>
@@ -892,6 +1120,11 @@ function DatasetTable({ datasets }: { datasets: Dataset[] }) {
               <td>{dataset.segmentCount}</td>
               <td>{dataset.language || "-"}</td>
               <td>{formatDate(dataset.createdAt)}</td>
+              <td>
+                <div className="inline-actions">
+                  <button type="button" onClick={() => onDelete(dataset.id)}>删除</button>
+                </div>
+              </td>
             </tr>
           ))}
         </tbody>
@@ -901,7 +1134,15 @@ function DatasetTable({ datasets }: { datasets: Dataset[] }) {
   );
 }
 
-function ModelTable({ models }: { models: ModelVersion[] }) {
+function ModelTable({
+  models,
+  onDownload,
+  onDelete,
+}: {
+  models: ModelVersion[];
+  onDownload: (modelVersionId: string) => void;
+  onDelete: (modelVersionId: string) => void;
+}) {
   return (
     <div className="table-shell">
       <table className="admin-table">
@@ -912,6 +1153,7 @@ function ModelTable({ models }: { models: ModelVersion[] }) {
             <th>类型</th>
             <th>数据集</th>
             <th>存储路径</th>
+            <th>操作</th>
           </tr>
         </thead>
         <tbody>
@@ -921,7 +1163,22 @@ function ModelTable({ models }: { models: ModelVersion[] }) {
               <td><span className={`pill status-${model.status.toLowerCase()}`}>{model.status}</span></td>
               <td>{model.modelType}</td>
               <td>{model.datasetId || "-"}</td>
-              <td className="truncate">{model.storagePath || "-"}</td>
+              <td className="truncate">{renderSourceValue(model.storagePath)}</td>
+              <td>
+                <div className="inline-actions">
+                  {model.storagePath ? (
+                    <button type="button" onClick={() => onDownload(model.id)}>下载模型</button>
+                  ) : (
+                    <span>-</span>
+                  )}
+                  {model.sampleAudioUrl ? (
+                    <a href={model.sampleAudioUrl} target="_blank" rel="noreferrer">
+                      试听
+                    </a>
+                  ) : null}
+                  <button type="button" onClick={() => onDelete(model.id)}>删除</button>
+                </div>
+              </td>
             </tr>
           ))}
         </tbody>
@@ -1038,4 +1295,16 @@ function DetailLine({ label, value }: { label: string; value: string }) {
 function formatDate(value: string | null) {
   if (!value) return "-";
   return new Date(value).toLocaleString("zh-CN");
+}
+
+function renderSourceValue(value: string | null) {
+  if (!value) return "-";
+  if (/^https?:\/\//i.test(value)) {
+    return (
+      <a href={value} target="_blank" rel="noreferrer">
+        {value}
+      </a>
+    );
+  }
+  return value;
 }

@@ -72,3 +72,4 @@ aimusic:
     heartbeat-interval-seconds: ${AIMUSIC_WORKER_HEARTBEAT_INTERVAL_SECONDS:30}
     pull-interval-seconds: ${AIMUSIC_WORKER_PULL_INTERVAL_SECONDS:10}
     job-lease-seconds: ${AIMUSIC_WORKER_JOB_LEASE_SECONDS:300}
+    offline-timeout-seconds: ${AIMUSIC_WORKER_OFFLINE_TIMEOUT_SECONDS:90}

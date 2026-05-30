@@ -29,19 +29,22 @@ public class WorkerService {
     private final ObjectMapper objectMapper;
     private final int heartbeatIntervalSeconds;
     private final int pullIntervalSeconds;
+    private final int offlineTimeoutSeconds;
 
     public WorkerService(
             WorkerNodeRepository workerNodeRepository,
             WorkerHeartbeatRepository workerHeartbeatRepository,
             ObjectMapper objectMapper,
             @Value("${aimusic.worker.heartbeat-interval-seconds}") int heartbeatIntervalSeconds,
-            @Value("${aimusic.worker.pull-interval-seconds}") int pullIntervalSeconds
+            @Value("${aimusic.worker.pull-interval-seconds}") int pullIntervalSeconds,
+            @Value("${aimusic.worker.offline-timeout-seconds}") int offlineTimeoutSeconds
     ) {
         this.workerNodeRepository = workerNodeRepository;
         this.workerHeartbeatRepository = workerHeartbeatRepository;
         this.objectMapper = objectMapper;
         this.heartbeatIntervalSeconds = heartbeatIntervalSeconds;
         this.pullIntervalSeconds = pullIntervalSeconds;
+        this.offlineTimeoutSeconds = offlineTimeoutSeconds;
     }
 
     @Transactional
@@ -130,6 +133,18 @@ public class WorkerService {
         return toResponse(workerNode);
     }
 
+    @Transactional(readOnly = true)
+    public NodeStatus resolveEffectiveStatus(WorkerNode workerNode) {
+        if (workerNode.getLastSeenAt() == null) {
+            return NodeStatus.OFFLINE;
+        }
+        OffsetDateTime offlineThreshold = OffsetDateTime.now().minusSeconds(offlineTimeoutSeconds);
+        if (workerNode.getLastSeenAt().isBefore(offlineThreshold)) {
+            return NodeStatus.OFFLINE;
+        }
+        return workerNode.getStatus();
+    }
+
     private WorkerNodeResponse toResponse(WorkerNode workerNode) {
         return new WorkerNodeResponse(
                 workerNode.getNodeId(),
@@ -139,7 +154,7 @@ public class WorkerService {
                 workerNode.getGpuName(),
                 workerNode.getGpuCount(),
                 workerNode.getVramMb(),
-                workerNode.getStatus(),
+                resolveEffectiveStatus(workerNode),
                 workerNode.getSupportedJobTypes(),
                 workerNode.getWorkerVersion(),
                 workerNode.getRunningJobId(),

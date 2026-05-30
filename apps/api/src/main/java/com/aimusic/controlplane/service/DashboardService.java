@@ -16,7 +16,6 @@ import com.aimusic.controlplane.repository.JobRepository;
 import com.aimusic.controlplane.repository.MediaAssetRepository;
 import com.aimusic.controlplane.repository.ModelVersionRepository;
 import com.aimusic.controlplane.repository.WorkerNodeRepository;
-import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -31,19 +30,22 @@ public class DashboardService {
     private final MediaAssetRepository mediaAssetRepository;
     private final DatasetRepository datasetRepository;
     private final ModelVersionRepository modelVersionRepository;
+    private final WorkerService workerService;
 
     public DashboardService(
             WorkerNodeRepository workerNodeRepository,
             JobRepository jobRepository,
             MediaAssetRepository mediaAssetRepository,
             DatasetRepository datasetRepository,
-            ModelVersionRepository modelVersionRepository
+            ModelVersionRepository modelVersionRepository,
+            WorkerService workerService
     ) {
         this.workerNodeRepository = workerNodeRepository;
         this.jobRepository = jobRepository;
         this.mediaAssetRepository = mediaAssetRepository;
         this.datasetRepository = datasetRepository;
         this.modelVersionRepository = modelVersionRepository;
+        this.workerService = workerService;
     }
 
     @Transactional(readOnly = true)
@@ -53,16 +55,17 @@ public class DashboardService {
         List<MediaAsset> assets = mediaAssetRepository.findAll();
         List<Dataset> datasets = datasetRepository.findAll();
         List<ModelVersion> modelVersions = modelVersionRepository.findAll();
-
-        OffsetDateTime onlineThreshold = OffsetDateTime.now().minusSeconds(90);
-        long onlineWorkers = workers.stream()
-                .filter(worker -> worker.getLastSeenAt() != null && worker.getLastSeenAt().isAfter(onlineThreshold))
+        List<NodeStatus> workerStatuses = workers.stream()
+                .map(workerService::resolveEffectiveStatus)
+                .toList();
+        long onlineWorkers = workerStatuses.stream()
+                .filter(status -> status != NodeStatus.OFFLINE)
                 .count();
 
         return new DashboardSummaryResponse(
                 workers.size(),
                 onlineWorkers,
-                workers.stream().filter(worker -> worker.getStatus() == NodeStatus.BUSY).count(),
+                workerStatuses.stream().filter(status -> status == NodeStatus.BUSY).count(),
                 jobs.size(),
                 jobs.stream().filter(job -> job.getStatus() == JobStatus.QUEUED || job.getStatus() == JobStatus.PENDING || job.getStatus() == JobStatus.RETRY_WAITING).count(),
                 jobs.stream().filter(job -> job.getStatus() == JobStatus.RUNNING || job.getStatus() == JobStatus.LEASED || job.getStatus() == JobStatus.UPLOADING).count(),
@@ -72,7 +75,7 @@ public class DashboardService {
                 datasets.stream().filter(dataset -> dataset.getStatus() == DatasetStatus.READY).count(),
                 modelVersions.size(),
                 modelVersions.stream().filter(model -> model.getStatus() == ModelVersionStatus.READY).count(),
-                toCounts(workers.stream().collect(Collectors.groupingBy(worker -> worker.getStatus().name(), Collectors.counting()))),
+                toCounts(workerStatuses.stream().collect(Collectors.groupingBy(Enum::name, Collectors.counting()))),
                 toCounts(jobs.stream().collect(Collectors.groupingBy(job -> job.getStatus().name(), Collectors.counting()))),
                 toCounts(jobs.stream().collect(Collectors.groupingBy(job -> job.getJobType().name(), Collectors.counting())))
         );

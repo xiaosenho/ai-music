@@ -169,6 +169,11 @@ button, input, select, textarea { font: inherit; }
 .field { display: grid; gap: 8px; }
 .field-full { grid-column: span 2; }
 .field span { color: var(--muted); font-size: 14px; }
+.field-help {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
 
 .admin-form input,
 .admin-form select,
@@ -320,6 +325,30 @@ button, input, select, textarea { font: inherit; }
   border-radius: 10px;
   border: 1px solid var(--line);
   background: var(--surface-alt);
+}
+
+.inline-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.inline-actions button {
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--surface-alt);
+}
+
+.inline-actions a,
+.admin-table a {
+  color: var(--blue);
+  text-decoration: none;
+}
+
+.inline-actions a:hover,
+.admin-table a:hover {
+  text-decoration: underline;
 }
 
 .detail-stack { display: grid; gap: 10px; margin-bottom: 16px; }

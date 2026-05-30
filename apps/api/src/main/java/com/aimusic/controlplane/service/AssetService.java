@@ -6,6 +6,8 @@ import com.aimusic.controlplane.dto.MediaAssetResponse;
 import com.aimusic.controlplane.entity.MediaAsset;
 import com.aimusic.controlplane.model.AssetStatus;
 import com.aimusic.controlplane.model.AssetType;
+import com.aimusic.controlplane.repository.DatasetRepository;
+import com.aimusic.controlplane.repository.JobRepository;
 import com.aimusic.controlplane.repository.MediaAssetRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -18,15 +20,21 @@ import org.springframework.transaction.annotation.Transactional;
 public class AssetService {
 
     private final MediaAssetRepository mediaAssetRepository;
+    private final DatasetRepository datasetRepository;
+    private final JobRepository jobRepository;
     private final ObjectMapper objectMapper;
     private final CosStorageService cosStorageService;
 
     public AssetService(
             MediaAssetRepository mediaAssetRepository,
+            DatasetRepository datasetRepository,
+            JobRepository jobRepository,
             ObjectMapper objectMapper,
             CosStorageService cosStorageService
     ) {
         this.mediaAssetRepository = mediaAssetRepository;
+        this.datasetRepository = datasetRepository;
+        this.jobRepository = jobRepository;
         this.objectMapper = objectMapper;
         this.cosStorageService = cosStorageService;
     }
@@ -58,6 +66,27 @@ public class AssetService {
     public MediaAssetResponse get(UUID id) {
         return toResponse(mediaAssetRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Asset not found: " + id)));
+    }
+
+    @Transactional
+    public void delete(UUID id) {
+        MediaAsset asset = mediaAssetRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Asset not found: " + id));
+        String assetId = id.toString();
+
+        boolean usedByDataset = datasetRepository.findAll().stream()
+                .anyMatch(dataset -> dataset.getAssetIds().contains(assetId));
+        if (usedByDataset) {
+            throw new IllegalArgumentException("Asset is referenced by a dataset and cannot be deleted");
+        }
+
+        boolean usedByJob = jobRepository.findAll().stream()
+                .anyMatch(job -> job.getInputAssetIds().contains(assetId));
+        if (usedByJob) {
+            throw new IllegalArgumentException("Asset is referenced by a job and cannot be deleted");
+        }
+
+        mediaAssetRepository.delete(asset);
     }
 
     @Transactional

@@ -10,6 +10,7 @@ import com.aimusic.controlplane.entity.ModelVersion;
 import com.aimusic.controlplane.model.AssetStatus;
 import com.aimusic.controlplane.model.ExecutionMode;
 import com.aimusic.controlplane.model.JobType;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -78,6 +79,16 @@ public class WorkflowService {
         Dataset dataset = datasetService.require(datasetId);
         datasetService.markProcessing(datasetId);
         ModelVersion modelVersion = modelVersionService.createTrainingDraft(datasetId, request.modelName(), request.modelType(), request.note());
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("workflow", "dataset-train");
+        payload.put("datasetId", datasetId.toString());
+        payload.put("modelVersionId", modelVersion.getId().toString());
+        putIfNotNull(payload, "version", request.version());
+        putIfNotNull(payload, "useF0", request.useF0());
+        putIfNotNull(payload, "saveEveryEpoch", request.saveEveryEpoch());
+        putIfNotNull(payload, "saveLatest", request.saveLatest());
+        putIfNotNull(payload, "cacheGpu", request.cacheGpu());
+        putIfNotNull(payload, "saveEveryWeights", request.saveEveryWeights());
 
         JobResponse jobResponse = jobService.createJob(new CreateJobRequest(
                 null,
@@ -92,14 +103,10 @@ public class WorkflowService {
                 request.f0Method(),
                 request.batchSize(),
                 request.totalEpoch(),
-                null,
+                request.speakerId(),
                 3,
                 request.note(),
-                Map.of(
-                        "workflow", "dataset-train",
-                        "datasetId", datasetId.toString(),
-                        "modelVersionId", modelVersion.getId().toString()
-                )
+                payload
         ));
 
         modelVersionService.linkTrainingJob(modelVersion.getId(), jobResponse.id());
@@ -109,6 +116,17 @@ public class WorkflowService {
     @Transactional
     public JobResponse createInferJob(UUID modelVersionId, CreateInferJobRequest request) {
         ModelVersion modelVersion = modelVersionService.require(modelVersionId);
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("workflow", "model-infer");
+        payload.put("modelVersionId", modelVersionId.toString());
+        payload.put("inputAssetIds", request.inputAssetIds());
+        putIfNotNull(payload, "f0UpKey", request.f0UpKey());
+        putIfNotNull(payload, "indexRate", request.indexRate());
+        putIfNotNull(payload, "filterRadius", request.filterRadius());
+        putIfNotNull(payload, "resampleSr", request.resampleSr());
+        putIfNotNull(payload, "rmsMixRate", request.rmsMixRate());
+        putIfNotNull(payload, "protect", request.protect());
+
         return jobService.createJob(new CreateJobRequest(
                 null,
                 JobType.INFER,
@@ -119,21 +137,23 @@ public class WorkflowService {
                 null,
                 modelVersion.getName(),
                 null,
+                request.f0Method(),
                 null,
                 null,
-                null,
-                null,
+                request.speakerId(),
                 3,
                 request.note(),
-                Map.of(
-                        "workflow", "model-infer",
-                        "modelVersionId", modelVersionId.toString(),
-                        "inputAssetIds", request.inputAssetIds()
-                )
+                payload
         ));
     }
 
     public CosStorageService.DirectDownloadTicket prepareModelArtifactDownload(String storagePath) {
         return cosStorageService.prepareDirectDownload(storagePath);
+    }
+
+    private void putIfNotNull(Map<String, Object> payload, String key, Object value) {
+        if (value != null) {
+            payload.put(key, value);
+        }
     }
 }

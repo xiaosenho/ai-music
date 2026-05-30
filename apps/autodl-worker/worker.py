@@ -52,7 +52,7 @@ class WorkerConfig:
     idle_sleep_seconds: int = field(default_factory=lambda: read_int("AIMUSIC_WORKER_IDLE_SLEEP_SECONDS", 5))
     progress_interval_seconds: int = field(default_factory=lambda: read_int("AIMUSIC_WORKER_PROGRESS_INTERVAL_SECONDS", 10))
     mock_delay_seconds: int = field(default_factory=lambda: read_int("AIMUSIC_WORKER_MOCK_DELAY_SECONDS", 2))
-    use_mock_executor: bool = field(default_factory=lambda: read_bool("AIMUSIC_WORKER_USE_MOCK_EXECUTOR", True))
+    use_mock_executor: bool = field(default_factory=lambda: read_bool("AIMUSIC_WORKER_USE_MOCK_EXECUTOR", False))
     prefetch_resources: bool = field(default_factory=lambda: read_bool("AIMUSIC_WORKER_PREFETCH_RESOURCES", True))
     process_command: str = field(default_factory=lambda: read_env("AIMUSIC_PROCESS_COMMAND", ""))
     train_command: str = field(default_factory=lambda: read_env("AIMUSIC_TRAIN_COMMAND", ""))
@@ -617,7 +617,13 @@ class AutoDlWorker:
     def run(self) -> int:
         self.register()
         self.start_heartbeat_loop()
-        print("[worker] started, waiting for jobs")
+        mode = "MOCK" if self.config.use_mock_executor else "REAL"
+        print("[worker] started in %s mode, waiting for jobs" % mode)
+        if self.config.use_mock_executor:
+            print(
+                "[worker] warning: mock executor is enabled, TRAIN jobs will generate mock-model.pth instead of real RVC weights",
+                file=sys.stderr,
+            )
         while not self.stop_event.is_set():
             try:
                 job = self.pull_job()

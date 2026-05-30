@@ -3,6 +3,8 @@ package com.aimusic.controlplane.service;
 import com.aimusic.controlplane.dto.CreateDatasetRequest;
 import com.aimusic.controlplane.dto.DatasetResponse;
 import com.aimusic.controlplane.entity.Dataset;
+import com.aimusic.controlplane.repository.JobRepository;
+import com.aimusic.controlplane.repository.ModelVersionRepository;
 import com.aimusic.controlplane.model.DatasetStatus;
 import com.aimusic.controlplane.repository.DatasetRepository;
 import java.util.List;
@@ -14,9 +16,17 @@ import org.springframework.transaction.annotation.Transactional;
 public class DatasetService {
 
     private final DatasetRepository datasetRepository;
+    private final ModelVersionRepository modelVersionRepository;
+    private final JobRepository jobRepository;
 
-    public DatasetService(DatasetRepository datasetRepository) {
+    public DatasetService(
+            DatasetRepository datasetRepository,
+            ModelVersionRepository modelVersionRepository,
+            JobRepository jobRepository
+    ) {
         this.datasetRepository = datasetRepository;
+        this.modelVersionRepository = modelVersionRepository;
+        this.jobRepository = jobRepository;
     }
 
     @Transactional
@@ -42,6 +52,26 @@ public class DatasetService {
     @Transactional(readOnly = true)
     public DatasetResponse get(UUID id) {
         return toResponse(require(id));
+    }
+
+    @Transactional
+    public void delete(UUID id) {
+        Dataset dataset = require(id);
+        String datasetId = id.toString();
+
+        boolean usedByModel = modelVersionRepository.findAll().stream()
+                .anyMatch(modelVersion -> id.equals(modelVersion.getDatasetId()));
+        if (usedByModel) {
+            throw new IllegalArgumentException("Dataset is referenced by a model version and cannot be deleted");
+        }
+
+        boolean usedByJob = jobRepository.findAll().stream()
+                .anyMatch(job -> datasetId.equals(job.getDatasetVersion()));
+        if (usedByJob) {
+            throw new IllegalArgumentException("Dataset is referenced by a job and cannot be deleted");
+        }
+
+        datasetRepository.delete(dataset);
     }
 
     @Transactional

@@ -4,6 +4,7 @@ import com.aimusic.controlplane.dto.CreateModelVersionRequest;
 import com.aimusic.controlplane.dto.ModelVersionResponse;
 import com.aimusic.controlplane.entity.ModelVersion;
 import com.aimusic.controlplane.model.ModelVersionStatus;
+import com.aimusic.controlplane.repository.JobRepository;
 import com.aimusic.controlplane.repository.ModelVersionRepository;
 import java.util.List;
 import java.util.UUID;
@@ -14,9 +15,11 @@ import org.springframework.transaction.annotation.Transactional;
 public class ModelVersionService {
 
     private final ModelVersionRepository modelVersionRepository;
+    private final JobRepository jobRepository;
 
-    public ModelVersionService(ModelVersionRepository modelVersionRepository) {
+    public ModelVersionService(ModelVersionRepository modelVersionRepository, JobRepository jobRepository) {
         this.modelVersionRepository = modelVersionRepository;
+        this.jobRepository = jobRepository;
     }
 
     @Transactional
@@ -45,6 +48,20 @@ public class ModelVersionService {
     @Transactional(readOnly = true)
     public ModelVersionResponse get(UUID id) {
         return toResponse(require(id));
+    }
+
+    @Transactional
+    public void delete(UUID id) {
+        ModelVersion modelVersion = require(id);
+        String modelVersionId = id.toString();
+
+        boolean usedByJob = jobRepository.findAll().stream()
+                .anyMatch(job -> modelVersionId.equals(job.getModelVersion()));
+        if (usedByJob) {
+            throw new IllegalArgumentException("Model version is referenced by a job and cannot be deleted");
+        }
+
+        modelVersionRepository.delete(modelVersion);
     }
 
     @Transactional

@@ -9,7 +9,13 @@ public record CreateTrainJobRequest(
         String f0Method,
         Integer batchSize,
         Integer totalEpoch,
+        String speakerId,
+        String version,
+        Boolean useF0,
+        Integer saveEveryEpoch,
+        Boolean saveLatest,
+        Boolean cacheGpu,
+        Boolean saveEveryWeights,
         String note
 ) {
 }
-
